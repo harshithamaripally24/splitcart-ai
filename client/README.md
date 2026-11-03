@@ -1,32 +1,14 @@
-# React + TypeScript + Vite
+# SplitCart AI 🛒✨
+*Agentic Bundle Negotiator & PayPal Pay Later Cash-Flow Optimizer*
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+SplitCart AI is a full-stack fintech application designed to eliminate cart abandonment by combining LLM-powered bundle negotiation with automated PayPal BNPL (Buy Now, Pay Later) financing caps.
 
-Currently, two official plugins are available:
+## Features
+- **Agentic Bundle Negotiation:** Dynamically adjusts shopping cart bundles to stay under a custom bi-weekly financial cap.
+- **Cryptographic Cart Integrity:** Ensures secure transactions with deterministic node-side math and SHA-256 cart hashing.
+- **Live PayPal Pay Later Integration:** Fully tested end-to-end sandbox checkout supporting PayPal Pay in 4 and Pay Monthly options.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
-```
-
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Tech Stack
+- **Frontend:** React, Vite, Tailwind CSS, AG Grid
+- **Backend:** Node.js, Express
+- **AI & APIs:** Google Gemini API (`gemini-3.8-flash`), PayPal Orders v2 API
