@@ -57,11 +57,8 @@ interface PlanData {
 
 export default function App() {
   const [judgeInfo, setJudgeInfo] = useState({
-    sandboxBuyerEmail: '',
-    sandboxBuyerPassword: '',
     paypalClientId: ''
   });
-  const [copiedField, setCopiedField] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [goal, setGoal] = useState('Remote Software Engineer Ergonomic Desk Setup');
   const [budget, setBudget] = useState(140);
@@ -103,44 +100,47 @@ export default function App() {
     }
   };
 
-  const copyText = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedField(label);
-    setTimeout(() => setCopiedField(null), 2000);
-  };
-
   const simulateOrderCreation = async () => {
     if (!plan) return;
     const skuIds = plan.items.map(i => i.id);
     const res = await fetch('http://localhost:3001/api/paypal/create-order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ skuIds })
+      body: JSON.stringify({ skuIds, cartHash: plan.cartHash })
     });
     const order = await res.json();
     setLastOrderAudit(order);
   };
 
+  // AG Grid Enterprise Column Definitions with Grouping & Aggregations
   const columnDefs: ColDef<Product>[] = [
-    { field: 'name', headerName: 'Bundle Item', flex: 2 },
-    { field: 'category', headerName: 'Category', flex: 1 },
-    { field: 'tier', headerName: 'Tier', flex: 1 },
+    { 
+      field: 'category', 
+      headerName: 'Category', 
+      rowGroup: true, 
+      hide: true 
+    },
+    { field: 'name', headerName: 'Bundle Item', flex: 2, sortable: true, filter: true },
+    { field: 'tier', headerName: 'Tier', flex: 1, sortable: true },
     {
       field: 'price',
       headerName: 'Canonical Price',
       flex: 1,
-      valueFormatter: p => (p.value ? `$${p.value.toFixed(2)}` : '$0.00')
+      aggFunc: 'sum',
+      valueFormatter: p => (typeof p.value === 'number' ? `$${p.value.toFixed(2)}` : '$0.00')
     },
     {
       headerName: 'Pay in 4 (/2 Wks)',
       flex: 1,
-      valueGetter: p => (p.data ? `$${(p.data.price / 4).toFixed(2)}` : '$0.00')
+      valueGetter: p => (p.data ? Number((p.data.price / 4).toFixed(2)) : 0),
+      aggFunc: 'sum',
+      valueFormatter: p => (typeof p.value === 'number' ? `$${p.value.toFixed(2)}` : '$0.00')
     }
   ];
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
-      {/* TOP BAR: 1-Click Judge Quick-Test Bar */}
+      {/* TOP BAR: Clean 1-Click Judge Presets Bar */}
       <div className="bg-slate-900 text-white px-6 py-3 border-b border-slate-700 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <Award className="text-paypal-yellow w-5 h-5" />
@@ -171,25 +171,8 @@ export default function App() {
           </button>
         </div>
 
-        <div className="flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded border border-slate-700 text-xs">
-          <span className="text-slate-400">US Sandbox Buyer:</span>
-          <button
-            onClick={() => copyText(judgeInfo.sandboxBuyerEmail, 'email')}
-            className="hover:text-paypal-yellow flex items-center gap-1 font-mono text-paypal-yellow"
-            title="Click to copy Sandbox Buyer Email"
-          >
-            {judgeInfo.sandboxBuyerEmail || 'sb-buyer@personal.example.com'}
-            {copiedField === 'email' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-          </button>
-          <span className="text-slate-600">|</span>
-          <button
-            onClick={() => copyText(judgeInfo.sandboxBuyerPassword, 'pw')}
-            className="hover:text-paypal-yellow flex items-center gap-1 text-slate-300"
-            title="Click to copy Sandbox Buyer Password"
-          >
-            <span>Copy Password</span>
-            {copiedField === 'pw' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-          </button>
+        <div className="flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded border border-slate-700 text-xs text-slate-300">
+          <span>PayPal Sandbox Mode Active</span>
         </div>
       </div>
 
@@ -276,8 +259,8 @@ export default function App() {
                 </div>
               )}
 
-              {/* Persistent AG Grid Container (Ezekiel's Safe Mounting Fix) */}
-              <div className="w-full h-60 min-h-[240px] border border-slate-200 rounded-lg overflow-hidden bg-white">
+              {/* AG Grid Enterprise Table with Row Grouping & Aggregations */}
+              <div className="w-full h-64 min-h-[250px] border border-slate-200 rounded-lg overflow-hidden bg-white">
                 {loading ? (
                   <div className="w-full h-full flex items-center justify-center bg-slate-50 text-sm text-slate-500 gap-2">
                     <RefreshCw className="w-5 h-5 animate-spin text-paypal-blue" />
@@ -285,7 +268,12 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="ag-theme-alpine w-full h-full">
-                    <AgGridReact rowData={plan?.items || []} columnDefs={columnDefs} />
+                    <AgGridReact
+                      rowData={plan?.items || []}
+                      columnDefs={columnDefs}
+                      autoGroupColumnDef={{ headerName: 'Category / Item', flex: 2 }}
+                      groupDefaultExpanded={1}
+                    />
                   </div>
                 )}
               </div>
@@ -418,7 +406,7 @@ export default function App() {
                         Order ID: {checkoutComplete.id}
                       </p>
                       <p className="text-xs text-slate-600">
-                        Order <strong>{checkoutComplete.status}</strong> • Your payment of ${plan.totalPrice.toFixed(2)} was successfully processed 
+                        Order <strong>{checkoutComplete.status}</strong>. Your payment of ${plan.totalPrice.toFixed(2)} was successfully processed.
                       </p>
                     </div>
                   ) : (
@@ -432,7 +420,7 @@ export default function App() {
                           const res = await fetch('http://localhost:3001/api/paypal/create-order', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ skuIds })
+                            body: JSON.stringify({ skuIds, cartHash: plan.cartHash })
                           });
                           const order = await res.json();
                           setLastOrderAudit(order);
@@ -457,7 +445,7 @@ export default function App() {
                           const res = await fetch('http://localhost:3001/api/paypal/create-order', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ skuIds })
+                            body: JSON.stringify({ skuIds, cartHash: plan.cartHash })
                           });
                           const order = await res.json();
                           setLastOrderAudit(order);

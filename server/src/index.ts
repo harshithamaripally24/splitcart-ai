@@ -60,8 +60,8 @@ app.post('/api/agent/plan', async (req, res) => {
 // 4. Create Real PayPal Sandbox Order (Orders v2 API)
 app.post('/api/paypal/create-order', async (req, res) => {
   try {
-    const { skuIds } = req.body;
-    const order = await createPayPalOrder(skuIds);
+    const { skuIds, cartHash } = req.body;
+    const order = await createPayPalOrder(skuIds, cartHash);
     res.json(order);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
