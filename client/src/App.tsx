@@ -5,8 +5,6 @@ import type { ColDef } from 'ag-grid-community';
 import {
   ShieldCheck,
   Sparkles,
-  Copy,
-  Check,
   ShoppingCart,
   RefreshCw,
   Award,
