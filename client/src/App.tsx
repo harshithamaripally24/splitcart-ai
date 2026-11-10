@@ -236,7 +236,6 @@ export default function App() {
   ];
 
   const activeCheckout = getActiveCheckoutPayload();
-  const isPayIn4EligibleForActive = activeCheckout.totalPrice >= 30 && activeCheckout.totalPrice <= 1500;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
