@@ -64,9 +64,9 @@ export default function App() {
   const [plan, setPlan] = useState<PlanData | null>(null);
   const [lastOrderAudit, setLastOrderAudit] = useState<any>(null);
   const [checkoutComplete, setCheckoutComplete] = useState<any>(null);
-
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
   useEffect(() => {
-    fetch('${API_URL}/api/judge-info')
+    fetch(`${API_URL}/api/judge-info`)
       .then(res => res.json())
       .then(data => setJudgeInfo(data))
       .catch(err => console.error('Failed to load judge info:', err));
@@ -101,7 +101,7 @@ export default function App() {
   const simulateOrderCreation = async () => {
     if (!plan) return;
     const skuIds = plan.items.map(i => i.id);
-    const res = await fetch('http://localhost:3001/api/paypal/create-order', {
+    const res = await fetch(`${API_URL}/api/paypal/create-order`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ skuIds, cartHash: plan.cartHash })
