@@ -9,7 +9,7 @@ dotenv.config();
 
 const app = express();
 app.use(cors({
-  origin: ['http://localhost:5173', 'https://splitcart-ai-1.onrender.com/']
+  origin: ['http://localhost:5173', 'https://splitcart-ai-1.onrender.com']
 }));app.use(express.json());
 
 const PORT = process.env.PORT || 3001;
