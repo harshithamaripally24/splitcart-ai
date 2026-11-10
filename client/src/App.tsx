@@ -658,7 +658,6 @@ export default function App() {
                       style={{ layout: 'text', logo: { type: 'primary' } }}
                     />
                   </div>
-
                   {checkoutComplete ? (
                     <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-950 text-center space-y-2">
                       <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
@@ -668,26 +667,9 @@ export default function App() {
                       <p className="text-xs font-mono bg-white p-1.5 rounded border border-emerald-200">
                         Order ID: {checkoutComplete.id} • Status: {checkoutComplete.status}
                       </p>
-                      {isPayIn4EligibleForActive ? (
-                        <div className="text-xs bg-white/90 p-2.5 rounded border border-emerald-200 text-left space-y-1">
-                          <div className="flex justify-between font-bold text-emerald-800">
-                            <span>Buyer Charged Today (Installment 1/4):</span>
-                            <span>${(activeCheckout.totalPrice / 4).toFixed(2)}</span>
-                          </div>
-                          <div className="flex justify-between text-slate-600">
-                            <span>Remaining 3 Bi-Weekly Payments:</span>
-                            <span>3x ${(activeCheckout.totalPrice / 4).toFixed(2)} (0% APR)</span>
-                          </div>
-                          <div className="flex justify-between text-slate-500 pt-1 border-t border-slate-200 text-[11px]">
-                            <span>Merchant Upfront Settlement:</span>
-                            <span>${activeCheckout.totalPrice.toFixed(2)} (100% Paid by PayPal)</span>
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-xs text-slate-600">
-                          Order <strong>{checkoutComplete.status}</strong>. Full merchant settlement of ${activeCheckout.totalPrice.toFixed(2)} processed via PayPal Sandbox.
-                        </p>
-                      )}
+                      <p className="text-xs text-slate-600">
+                        Order <strong>{checkoutComplete.status}</strong>. Your payment of ${activeCheckout.totalPrice.toFixed(2)} was successfully processed.
+                      </p>
                     </div>
                   ) : (
                     <div className="space-y-2">
