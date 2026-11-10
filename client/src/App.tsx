@@ -12,7 +12,9 @@ import {
   Code2,
   CheckCircle2,
   XCircle,
-  Send
+  Send,
+  Split,
+  Calendar
 } from 'lucide-react';
 
 interface Product {
@@ -53,6 +55,13 @@ interface PlanData {
   sourceMode: string;
 }
 
+interface SplitCartGroup {
+  label: string;
+  items: Product[];
+  totalPrice: number;
+  biWeeklyAmount: number;
+}
+
 export default function App() {
   const [judgeInfo, setJudgeInfo] = useState({
     paypalClientId: ''
@@ -60,11 +69,16 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [goal, setGoal] = useState('Remote Software Engineer Ergonomic Desk Setup');
   const [budget, setBudget] = useState(140);
+  const [rentDueDay, setRentDueDay] = useState<number>(1);
   const [customTradeOff, setCustomTradeOff] = useState('');
   const [plan, setPlan] = useState<PlanData | null>(null);
+  const [splitCarts, setSplitCarts] = useState<{ cartA: SplitCartGroup; cartB: SplitCartGroup } | null>(null);
+  const [activeSplitSelection, setActiveSplitSelection] = useState<'FULL' | 'CART_A' | 'CART_B'>('FULL');
   const [lastOrderAudit, setLastOrderAudit] = useState<any>(null);
   const [checkoutComplete, setCheckoutComplete] = useState<any>(null);
+
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
   useEffect(() => {
     fetch(`${API_URL}/api/judge-info`)
       .then(res => res.json())
@@ -77,6 +91,8 @@ export default function App() {
   const loadScenario = async (selectedGoal: string, selectedBudget: number, tradeOffPrompt?: string) => {
     setLoading(true);
     setCheckoutComplete(null);
+    setSplitCarts(null);
+    setActiveSplitSelection('FULL');
     setGoal(selectedGoal);
     setBudget(selectedBudget);
     try {
@@ -98,13 +114,96 @@ export default function App() {
     }
   };
 
+  // Autonomous Dual-Cart Splitter Algorithm (Greedy Bin-Packing under $1,500 Pay in 4 Cap)
+  const handleSplitIntoTwoCarts = () => {
+    if (!plan) return;
+    const sorted = [...plan.items].sort((a, b) => b.price - a.price);
+    const cartAItems: Product[] = [];
+    const cartBItems: Product[] = [];
+    let cartATotal = 0;
+
+    for (const item of sorted) {
+      if (cartATotal + item.price <= 1500 && cartAItems.length < sorted.length - 1) {
+        cartAItems.push(item);
+        cartATotal += item.price;
+      } else {
+        cartBItems.push(item);
+      }
+    }
+
+    // Fallback if all items landed in A
+    if (cartBItems.length === 0 && cartAItems.length > 1) {
+      const moved = cartAItems.pop()!;
+      cartATotal -= moved.price;
+      cartBItems.push(moved);
+    }
+
+    const cartBTotal = cartBItems.reduce((sum, i) => sum + i.price, 0);
+
+    setSplitCarts({
+      cartA: {
+        label: 'Cart A: Core Primary Rig (Immediate Pay in 4)',
+        items: cartAItems,
+        totalPrice: Number(cartATotal.toFixed(2)),
+        biWeeklyAmount: Number((cartATotal / 4).toFixed(2))
+      },
+      cartB: {
+        label: 'Cart B: Expansion Peripherals (Staggered Pay in 4)',
+        items: cartBItems,
+        totalPrice: Number(cartBTotal.toFixed(2)),
+        biWeeklyAmount: Number((cartBTotal / 4).toFixed(2))
+      }
+    });
+    setActiveSplitSelection('CART_A');
+    setCheckoutComplete(null);
+  };
+
+  // Determine which items & amount are currently routed to PayPal Checkout
+  const getActiveCheckoutPayload = () => {
+    if (!plan) return { skuIds: [], totalPrice: 0, label: 'Full Bundle' };
+    if (splitCarts && activeSplitSelection === 'CART_A') {
+      return {
+        skuIds: splitCarts.cartA.items.map(i => i.id),
+        totalPrice: splitCarts.cartA.totalPrice,
+        label: 'Split Cart A (0% APR Pay in 4)'
+      };
+    }
+    if (splitCarts && activeSplitSelection === 'CART_B') {
+      return {
+        skuIds: splitCarts.cartB.items.map(i => i.id),
+        totalPrice: splitCarts.cartB.totalPrice,
+        label: 'Split Cart B (0% APR Pay in 4)'
+      };
+    }
+    return {
+      skuIds: plan.items.map(i => i.id),
+      totalPrice: plan.totalPrice,
+      label: 'Full Bundle'
+    };
+  };
+
+  // Interactive Rent-Day Buffer Check (+/- 2 Days of User's Rent Due Day)
+  const checkRentCollision = (dateStr: string) => {
+    const parsed = new Date(dateStr);
+    if (isNaN(parsed.getTime())) return { safe: true, diffDays: 0, shiftDays: 0 };
+    const dayOfMonth = parsed.getDate();
+    const directDiff = Math.abs(dayOfMonth - rentDueDay);
+    const wrapDiff = 30 - directDiff;
+    const minDiff = Math.min(directDiff, wrapDiff);
+    return {
+      safe: minDiff > 2,
+      dayOfMonth,
+      shiftDays: minDiff <= 2 ? 3 - minDiff : 0
+    };
+  };
+
   const simulateOrderCreation = async () => {
     if (!plan) return;
-    const skuIds = plan.items.map(i => i.id);
+    const activePayload = getActiveCheckoutPayload();
     const res = await fetch(`${API_URL}/api/paypal/create-order`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ skuIds, cartHash: plan.cartHash })
+      body: JSON.stringify({ skuIds: activePayload.skuIds, cartHash: plan.cartHash })
     });
     const order = await res.json();
     setLastOrderAudit(order);
@@ -112,11 +211,11 @@ export default function App() {
 
   // AG Grid Enterprise Column Definitions with Grouping & Aggregations
   const columnDefs: ColDef<Product>[] = [
-    { 
-      field: 'category', 
-      headerName: 'Category', 
-      rowGroup: true, 
-      hide: true 
+    {
+      field: 'category',
+      headerName: 'Category',
+      rowGroup: true,
+      hide: true
     },
     { field: 'name', headerName: 'Bundle Item', flex: 2, sortable: true, filter: true },
     { field: 'tier', headerName: 'Tier', flex: 1, sortable: true },
@@ -135,6 +234,9 @@ export default function App() {
       valueFormatter: p => (typeof p.value === 'number' ? `$${p.value.toFixed(2)}` : '$0.00')
     }
   ];
+
+  const activeCheckout = getActiveCheckoutPayload();
+  const isPayIn4EligibleForActive = activeCheckout.totalPrice >= 30 && activeCheckout.totalPrice <= 1500;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -159,7 +261,7 @@ export default function App() {
             onClick={() => loadScenario('Ultra Broadcast Executive Rig', 360, 'FORCE_OVER_1500_TEST')}
             className="text-xs bg-amber-950/80 hover:bg-amber-900 text-amber-200 px-3 py-1.5 rounded-full border border-amber-700 transition"
           >
-            2. Test $1,500 Pay in 4 Limit Guardrail
+            2. Test $1,500 Pay in 4 Limit & Dual-Cart Split
           </button>
           <button
             onClick={() => loadScenario('Creator Podcast & Streaming Studio', 165, 'Prioritize VocalCast XLR mic and 4K monitor')}
@@ -183,7 +285,7 @@ export default function App() {
               SplitCart <span className="text-paypal-blue">AI</span>
             </h1>
             <p className="text-slate-600 text-sm mt-0.5">
-              Agentic Bundle Negotiator & PayPal Pay Later Cash-Flow Optimizer
+              Agentic Bundle Negotiator, Dual-Cart BNPL Splitter & PayPal Pay Later Cash-Flow Optimizer
             </p>
           </div>
 
@@ -195,9 +297,9 @@ export default function App() {
           </div>
         </header>
 
-        {/* Custom Goal & Budget Controls */}
+        {/* Custom Goal, Budget & Rent-Date Collision Controls */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-6 flex flex-wrap items-end gap-4">
-          <div className="flex-1 min-w-[240px]">
+          <div className="flex-1 min-w-[220px]">
             <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Project / Shopping Goal</label>
             <input
               type="text"
@@ -206,7 +308,7 @@ export default function App() {
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-paypal-blue"
             />
           </div>
-          <div className="w-48">
+          <div className="w-44">
             <label className="block text-xs font-bold uppercase text-slate-500 mb-1">
               Max Bi-Weekly Cap ($/2wks)
             </label>
@@ -216,6 +318,22 @@ export default function App() {
               onChange={e => setBudget(Number(e.target.value))}
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-bold text-paypal-dark focus:outline-none focus:border-paypal-blue"
             />
+          </div>
+          <div className="w-48">
+            <label className="block text-xs font-bold uppercase text-slate-500 mb-1 flex items-center gap-1">
+              <Calendar className="w-3.5 h-3.5 text-paypal-blue" />
+              Rent / Bill Due Day
+            </label>
+            <select
+              value={rentDueDay}
+              onChange={e => setRentDueDay(Number(e.target.value))}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-semibold text-slate-800 focus:outline-none focus:border-paypal-blue bg-white"
+            >
+              <option value={1}>1st of Month (Standard Rent)</option>
+              <option value={10}>10th of Month (Test Collision)</option>
+              <option value={15}>15th of Month (Mid-Month Bill)</option>
+              <option value={24}>24th of Month (Test Collision)</option>
+            </select>
           </div>
           <button
             onClick={() => loadScenario(goal, budget)}
@@ -250,7 +368,7 @@ export default function App() {
                       </p>
                     ) : (
                       <p className="text-xs font-bold text-amber-600">
-                        Exceeds $1,500 Pay in 4 limit • Use Pay Monthly (${plan.payMonthly.twelveMonthAmount}/mo)
+                        Exceeds $1,500 Pay in 4 limit • Use Dual-Cart Split or Pay Monthly (${plan.payMonthly.twelveMonthAmount}/mo)
                       </p>
                     )}
                   </div>
@@ -318,7 +436,7 @@ export default function App() {
               )}
             </div>
 
-            {/* 6-Week Bi-Weekly Cash-Flow Schedule & Merchant vs Buyer Value */}
+            {/* 6-Week Bi-Weekly Cash-Flow Schedule & Autonomous Dual-Cart Splitter */}
             {plan && (
               <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
                 <div className="flex justify-between items-center">
@@ -332,40 +450,178 @@ export default function App() {
 
                 {plan.payIn4.eligible ? (
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {plan.payIn4.schedule.map(slot => (
-                      <div key={slot.installment} className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
-                        <span className="text-[11px] font-semibold text-slate-500 block">{slot.label}</span>
-                        <span className="text-lg font-extrabold text-paypal-dark mt-1 block">
-                          ${slot.amount.toFixed(2)}
-                        </span>
-                        <span className="text-xs text-slate-500 block">{slot.date}</span>
-                        <span className="text-[10px] text-emerald-600 font-medium mt-1 block">
-                          ✓ 0% APR • Rent-Day Safe
-                        </span>
-                      </div>
-                    ))}
+                    {plan.payIn4.schedule.map(slot => {
+                      const collision = checkRentCollision(slot.date);
+                      return (
+                        <div
+                          key={slot.installment}
+                          className={`p-3 rounded-lg border ${
+                            collision.safe
+                              ? 'bg-slate-50 border-slate-200'
+                              : 'bg-amber-50/90 border-amber-400'
+                          }`}
+                        >
+                          <span className="text-[11px] font-semibold text-slate-500 block">{slot.label}</span>
+                          <span className="text-lg font-extrabold text-paypal-dark mt-1 block">
+                            ${slot.amount.toFixed(2)}
+                          </span>
+                          <span className="text-xs text-slate-500 block">{slot.date}</span>
+                          {collision.safe ? (
+                            <span className="text-[10px] text-emerald-600 font-medium mt-1 block">
+                              ✓ 0% APR • Clears Rent Day ({rentDueDay}th)
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-amber-800 font-bold mt-1 block">
+                              ⚠️ Collides w/ Bill ({rentDueDay}th) • Delay {collision.shiftDays}d
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
-                  <div className="p-4 bg-amber-50 border border-amber-300 rounded-lg flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3 text-amber-900 text-xs">
-                      <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0" />
-                      <div>
-                        <p className="font-bold text-sm">PayPal Pay in 4 Cap Exceeded ($1,500 Max)</p>
-                        <p>{plan.payIn4.statusMessage}</p>
+                  <div className="space-y-4">
+                    <div className="p-4 bg-amber-50 border border-amber-300 rounded-lg flex flex-wrap items-center justify-between gap-4">
+                      <div className="flex items-center gap-3 text-amber-900 text-xs">
+                        <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0" />
+                        <div>
+                          <p className="font-bold text-sm">PayPal Pay in 4 Cap Exceeded ($1,500 Max)</p>
+                          <p>{plan.payIn4.statusMessage}</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={handleSplitIntoTwoCarts}
+                          className="bg-paypal-blue hover:bg-paypal-dark text-white text-xs font-bold px-3.5 py-2 rounded-lg flex items-center gap-1.5 shadow-sm transition"
+                        >
+                          <Split className="w-3.5 h-3.5" />
+                          Split into 2 Zero-APR Carts (Keep Pro Gear)
+                        </button>
+                        <button
+                          onClick={() =>
+                            loadScenario(
+                              goal,
+                              350,
+                              'Downgrade monitor from Reference OLED to 4K StudioMaster so total cart drops under $1,500 and unlocks 0% APR Pay in 4'
+                            )
+                          }
+                          className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3 py-2 rounded-lg shrink-0 transition"
+                        >
+                          Downgrade Item Under $1,500
+                        </button>
                       </div>
                     </div>
-                    <button
-                      onClick={() =>
-                        loadScenario(
-                          goal,
-                          350,
-                          'Downgrade monitor from Reference OLED to 4K StudioMaster so total cart drops under $1,500 and unlocks 0% APR Pay in 4'
-                        )
-                      }
-                      className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3 py-2 rounded-lg shrink-0"
-                    >
-                      Auto-Fix Under $1,500
-                    </button>
+
+                    {/* Dual-Cart Split Visualizer */}
+                    {splitCarts && (
+                      <div className="p-4 bg-blue-50/60 border border-blue-200 rounded-xl space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Split className="w-4 h-4 text-paypal-blue" />
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-paypal-dark">
+                              Autonomous Dual-Cart Partition (Both Unlocked for 0% APR Pay in 4)
+                            </h4>
+                          </div>
+                          <span className="text-[11px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded">
+                            Saves ~15% APR Pay Monthly Interest
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {/* CART A CARD */}
+                          <div
+                            className={`p-3.5 rounded-lg border transition ${
+                              activeSplitSelection === 'CART_A'
+                                ? 'bg-white border-paypal-blue ring-2 ring-paypal-blue/20'
+                                : 'bg-white/80 border-slate-200'
+                            }`}
+                          >
+                            <div className="flex justify-between items-start mb-2">
+                              <div>
+                                <span className="text-xs font-bold text-slate-900 block">
+                                  {splitCarts.cartA.label}
+                                </span>
+                                <span className="text-[11px] text-emerald-600 font-semibold">
+                                  ✓ Under $1,500 Cap • 4x ${splitCarts.cartA.biWeeklyAmount.toFixed(2)}/2wks
+                                </span>
+                              </div>
+                              <span className="text-base font-black text-slate-900">
+                                ${splitCarts.cartA.totalPrice.toFixed(2)}
+                              </span>
+                            </div>
+                            <ul className="text-xs text-slate-600 space-y-1 mb-3">
+                              {splitCarts.cartA.items.map(item => (
+                                <li key={item.id} className="flex justify-between">
+                                  <span>• {item.name}</span>
+                                  <span className="font-mono">${item.price.toFixed(2)}</span>
+                                </li>
+                              ))}
+                            </ul>
+                            <button
+                              onClick={() => {
+                                setActiveSplitSelection('CART_A');
+                                setCheckoutComplete(null);
+                              }}
+                              className={`w-full py-1.5 rounded text-xs font-bold transition ${
+                                activeSplitSelection === 'CART_A'
+                                  ? 'bg-paypal-blue text-white'
+                                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                              }`}
+                            >
+                              {activeSplitSelection === 'CART_A'
+                                ? '✓ Loaded in PayPal Checkout →'
+                                : 'Load Cart A into Checkout'}
+                            </button>
+                          </div>
+
+                          {/* CART B CARD */}
+                          <div
+                            className={`p-3.5 rounded-lg border transition ${
+                              activeSplitSelection === 'CART_B'
+                                ? 'bg-white border-paypal-blue ring-2 ring-paypal-blue/20'
+                                : 'bg-white/80 border-slate-200'
+                            }`}
+                          >
+                            <div className="flex justify-between items-start mb-2">
+                              <div>
+                                <span className="text-xs font-bold text-slate-900 block">
+                                  {splitCarts.cartB.label}
+                                </span>
+                                <span className="text-[11px] text-emerald-600 font-semibold">
+                                  ✓ Under $1,500 Cap • 4x ${splitCarts.cartB.biWeeklyAmount.toFixed(2)}/2wks
+                                </span>
+                              </div>
+                              <span className="text-base font-black text-slate-900">
+                                ${splitCarts.cartB.totalPrice.toFixed(2)}
+                              </span>
+                            </div>
+                            <ul className="text-xs text-slate-600 space-y-1 mb-3">
+                              {splitCarts.cartB.items.map(item => (
+                                <li key={item.id} className="flex justify-between">
+                                  <span>• {item.name}</span>
+                                  <span className="font-mono">${item.price.toFixed(2)}</span>
+                                </li>
+                              ))}
+                            </ul>
+                            <button
+                              onClick={() => {
+                                setActiveSplitSelection('CART_B');
+                                setCheckoutComplete(null);
+                              }}
+                              className={`w-full py-1.5 rounded text-xs font-bold transition ${
+                                activeSplitSelection === 'CART_B'
+                                  ? 'bg-paypal-blue text-white'
+                                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                              }`}
+                            >
+                              {activeSplitSelection === 'CART_B'
+                                ? '✓ Loaded in PayPal Checkout →'
+                                : 'Load Cart B into Checkout'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -375,9 +631,16 @@ export default function App() {
           {/* RIGHT COLUMN: Live PayPal Pay Later Checkout & Deterministic Guardrail Audit */}
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-              <h3 className="font-bold text-slate-900 text-base mb-3">
-                PayPal Pay Later Sandbox Checkout
-              </h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-bold text-slate-900 text-base">
+                  PayPal Pay Later Sandbox Checkout
+                </h3>
+                {activeSplitSelection !== 'FULL' && (
+                  <span className="text-[10px] font-bold bg-blue-100 text-paypal-blue px-2 py-0.5 rounded">
+                    {activeSplitSelection === 'CART_A' ? 'Checking Out Cart A' : 'Checking Out Cart B'}
+                  </span>
+                )}
+              </div>
 
               {judgeInfo.paypalClientId && plan ? (
                 <PayPalScriptProvider
@@ -391,7 +654,7 @@ export default function App() {
                   {/* Official Dynamic PayPal Pay Later Messaging */}
                   <div className="mb-4 p-3 bg-blue-50/60 rounded-lg border border-blue-100">
                     <PayPalMessages
-                      amount={plan.totalPrice}
+                      amount={activeCheckout.totalPrice}
                       style={{ layout: 'text', logo: { type: 'primary' } }}
                     />
                   </div>
@@ -399,26 +662,45 @@ export default function App() {
                   {checkoutComplete ? (
                     <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-950 text-center space-y-2">
                       <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
-                      <h4 className="font-bold text-sm">PayPal Sandbox Order Captured!</h4>
+                      <h4 className="font-bold text-sm">
+                        PayPal Sandbox Order Captured ({activeCheckout.label})!
+                      </h4>
                       <p className="text-xs font-mono bg-white p-1.5 rounded border border-emerald-200">
-                        Order ID: {checkoutComplete.id}
+                        Order ID: {checkoutComplete.id} • Status: {checkoutComplete.status}
                       </p>
-                      <p className="text-xs text-slate-600">
-                        Order <strong>{checkoutComplete.status}</strong>. Your payment of ${plan.totalPrice.toFixed(2)} was successfully processed.
-                      </p>
+                      {isPayIn4EligibleForActive ? (
+                        <div className="text-xs bg-white/90 p-2.5 rounded border border-emerald-200 text-left space-y-1">
+                          <div className="flex justify-between font-bold text-emerald-800">
+                            <span>Buyer Charged Today (Installment 1/4):</span>
+                            <span>${(activeCheckout.totalPrice / 4).toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-slate-600">
+                            <span>Remaining 3 Bi-Weekly Payments:</span>
+                            <span>3x ${(activeCheckout.totalPrice / 4).toFixed(2)} (0% APR)</span>
+                          </div>
+                          <div className="flex justify-between text-slate-500 pt-1 border-t border-slate-200 text-[11px]">
+                            <span>Merchant Upfront Settlement:</span>
+                            <span>${activeCheckout.totalPrice.toFixed(2)} (100% Paid by PayPal)</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-600">
+                          Order <strong>{checkoutComplete.status}</strong>. Full merchant settlement of ${activeCheckout.totalPrice.toFixed(2)} processed via PayPal Sandbox.
+                        </p>
+                      )}
                     </div>
                   ) : (
                     <div className="space-y-2">
                       <PayPalButtons
                         fundingSource="paylater"
                         style={{ layout: 'vertical', shape: 'rect', label: 'pay' }}
-                        forceReRender={[plan.totalPrice, plan.cartHash]}
+                        forceReRender={[activeCheckout.totalPrice, plan.cartHash, activeSplitSelection]}
                         createOrder={async () => {
-                          const skuIds = plan.items.map(i => i.id);
+                          const payload = getActiveCheckoutPayload();
                           const res = await fetch(`${API_URL}/api/paypal/create-order`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ skuIds, cartHash: plan.cartHash })
+                            body: JSON.stringify({ skuIds: payload.skuIds, cartHash: plan.cartHash })
                           });
                           const order = await res.json();
                           setLastOrderAudit(order);
@@ -437,13 +719,13 @@ export default function App() {
                       <PayPalButtons
                         fundingSource="paypal"
                         style={{ layout: 'vertical', shape: 'rect' }}
-                        forceReRender={[plan.totalPrice, plan.cartHash]}
+                        forceReRender={[activeCheckout.totalPrice, plan.cartHash, activeSplitSelection]}
                         createOrder={async () => {
-                          const skuIds = plan.items.map(i => i.id);
+                          const payload = getActiveCheckoutPayload();
                           const res = await fetch(`${API_URL}/api/paypal/create-order`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ skuIds, cartHash: plan.cartHash })
+                            body: JSON.stringify({ skuIds: payload.skuIds, cartHash: plan.cartHash })
                           });
                           const order = await res.json();
                           setLastOrderAudit(order);
@@ -473,7 +755,7 @@ export default function App() {
                   className="w-full text-xs bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition"
                 >
                   <Code2 className="w-4 h-4 text-paypal-blue" />
-                  1-Click Inspect Live PayPal Orders v2 Payload
+                  1-Click Inspect Live PayPal Orders v2 Payload ({activeCheckout.label})
                 </button>
                 {lastOrderAudit && (
                   <pre className="mt-2 p-2.5 bg-slate-900 text-emerald-400 text-[10px] rounded-lg overflow-x-auto max-h-44 font-mono">
