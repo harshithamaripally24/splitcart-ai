@@ -66,7 +66,7 @@ export default function App() {
   const [checkoutComplete, setCheckoutComplete] = useState<any>(null);
 
   useEffect(() => {
-    fetch('http://localhost:3001/api/judge-info')
+    fetch('${API_URL}/api/judge-info')
       .then(res => res.json())
       .then(data => setJudgeInfo(data))
       .catch(err => console.error('Failed to load judge info:', err));
