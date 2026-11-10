@@ -80,7 +80,7 @@ export default function App() {
     setGoal(selectedGoal);
     setBudget(selectedBudget);
     try {
-      const res = await fetch('${API_URL}/api/agent/plan', {
+      const res = await fetch(`${API_URL}/api/agent/plan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -415,7 +415,7 @@ export default function App() {
                         forceReRender={[plan.totalPrice, plan.cartHash]}
                         createOrder={async () => {
                           const skuIds = plan.items.map(i => i.id);
-                          const res = await fetch('http://localhost:3001/api/paypal/create-order', {
+                          const res = await fetch(`${API_URL}/api/paypal/create-order`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ skuIds, cartHash: plan.cartHash })
@@ -425,7 +425,7 @@ export default function App() {
                           return order.id;
                         }}
                         onApprove={async (data: any) => {
-                          const res = await fetch('http://localhost:3001/api/paypal/capture-order', {
+                          const res = await fetch(`${API_URL}/api/paypal/capture-order`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ orderID: data.orderID })
@@ -440,7 +440,7 @@ export default function App() {
                         forceReRender={[plan.totalPrice, plan.cartHash]}
                         createOrder={async () => {
                           const skuIds = plan.items.map(i => i.id);
-                          const res = await fetch('http://localhost:3001/api/paypal/create-order', {
+                          const res = await fetch(`${API_URL}/api/paypal/create-order`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ skuIds, cartHash: plan.cartHash })
@@ -450,7 +450,7 @@ export default function App() {
                           return order.id;
                         }}
                         onApprove={async (data: any) => {
-                          const res = await fetch('http://localhost:3001/api/paypal/capture-order', {
+                          const res = await fetch(`${API_URL}/api/paypal/capture-order`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ orderID: data.orderID })
