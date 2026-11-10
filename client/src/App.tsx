@@ -660,14 +660,14 @@ export default function App() {
                   {checkoutComplete ? (
                     <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-950 text-center space-y-2">
                       <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
-                      <h4 className="font-bold text-sm">
-                        PayPal Sandbox Order Captured ({activeCheckout.label})!
+                      <h4 className="font-bold text-sm text-emerald-900">
+                        Payment Successful
                       </h4>
-                      <p className="text-xs font-mono bg-white p-1.5 rounded border border-emerald-200">
-                        Order ID: {checkoutComplete.id} • Status: {checkoutComplete.status}
-                      </p>
                       <p className="text-xs text-slate-600">
-                        Order <strong>{checkoutComplete.status}</strong>. Your payment of ${activeCheckout.totalPrice.toFixed(2)} was successfully processed.
+                        Your PayPal Pay Later order of <strong className="text-slate-900">${activeCheckout.totalPrice.toFixed(2)}</strong> has been successfully authorized and captured.
+                      </p>
+                      <p className="text-[11px] font-mono text-slate-500 bg-white/60 py-1 px-2 rounded border border-emerald-100 inline-block">
+                        Transaction ID: {checkoutComplete.id}
                       </p>
                     </div>
                   ) : (
