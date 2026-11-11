@@ -16,14 +16,15 @@
 
 ```mermaid
 graph TD
-    A[Shopper Goal & 2-Wk Budget] -->|POST /api/agent/plan| B[Backend Cash-Flow Controller]
-    B -->|Gemini 3.8-Flash API| C{AI Discovery / Fallback}
-    C -->|Success| D[Real Retail Products & Prices]
-    C -->|Timeout / Error| E[Deterministic Fallback Generator]
-    D & E --> F[Quote Registry & HMAC Cart Signer]
-    F -->|Secure SHA-256 Hash| G[Client UI: Responsive Cards & Schedule]
-    G -->|Create Order with HMAC| H[PayPal Orders v2 REST API]
-    H -->|0% APR Pay in 4 / Pay Later| I[Verified Payment Capture & Audit]
+    A["Shopper Goal & Budget"] -->|POST /api/agent/plan| B[Backend Cash-Flow Controller]
+    B -->|Gemini 3.8-Flash API| C{AI Discovery}
+    C -->|Success| D[Real Retail Products]
+    C -->|Timeout / Error| E[Fallback Generator]
+    D & E --> F[Quote Registry & HMAC Signer]
+    F -->|SHA-256 Hash| G[Client UI & Schedule]
+    G -->|Create Order| H[PayPal Orders v2 API]
+    H -->|Pay in 4 / Pay Later| I[Verified Payment Capture]
+
 🔒 Security & Guardrail Contracts
 Server-Side HMAC-SHA256 Cart Signing: Prevents client-side price tampering by cryptographically binding SKU IDs and integer cent totals.
 
