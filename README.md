@@ -1,37 +1,40 @@
-# SplitCart AI 🛒✨
-*Agentic Bundle Negotiator & PayPal Pay Later Cash-Flow Optimizer*
+# SplitCart AI — Universal E-Commerce Product Discovery & Paycheck-Aligned Cash-Flow Planner
 
-SplitCart AI is a full-stack fintech application designed to eliminate cart abandonment by combining LLM-powered bundle negotiation with automated PayPal BNPL (Buy Now, Pay Later) financing caps.
+> **PayPal AI Hackathon 2026 Submission**  
+> SplitCart AI solves cash-flow fragmentation, BNPL loan stacking, and rent-date overdraft collisions for 0% APR PayPal Pay in 4.
 
-## Features
-- **Agentic Bundle Negotiation:** Dynamically adjusts shopping cart bundles to stay under a custom bi-weekly financial cap.
-- **Cryptographic Cart Integrity:** Ensures secure transactions with deterministic node-side math and SHA-256 cart hashing.
-- **Live PayPal Pay Later Integration:** Fully tested end-to-end sandbox checkout supporting PayPal Pay in 4 and Pay Monthly options.
+---
 
-## Tech Stack
-- **Frontend:** React, Vite, Tailwind CSS, AG Grid
-- **Backend:** Node.js, Express
-- **AI & APIs:** Google Gemini API (`gemini-3.8-flash`), PayPal Orders v2 API
+## 🚀 The Problem ("Why Now?")
+* **The Living Expense Collision:** According to the **Federal Reserve Board's SHED & FEDS Notes (June 2026)**, **18% of liquidity-constrained BNPL users** incurred bank overdraft fees when automated installment pulls collided directly with rent day.
+* **The Paycheck Reality:** **84.7% of Americans budget** and **48% live paycheck-to-paycheck** (Debt.com), yet standard e-commerce carts only display total price—blindsiding shoppers with 4-payment schedules that land on heavy bill days.
+* **The Solution:** SplitCart AI acts as an intelligent pre-cart planner that maps any shopping goal against your bi-weekly payroll and bill calendar, automatically staggering purchases into safe, non-colliding paycheck phases.
 
-## Getting Started Locally
+---
 
-### Prerequisites
-- Node.js installed on your machine
-- A PayPal Developer Sandbox account
-- A Google AI Studio API Key (Gemini)
+## 🏗️ Visual Architecture & Data Flow
 
-### 1. Setup Backend
+```mermaid
+graph TD
+    A[Shopper Goal & 2-Wk Budget] -->|POST /api/agent/plan| B[Backend Cash-Flow Controller]
+    B -->|Gemini 3.8-Flash API| C{AI Discovery / Fallback}
+    C -->|Success| D[Real Retail Products & Prices]
+    C -->|Timeout / Error| E[Deterministic Fallback Generator]
+    D & E --> F[Quote Registry & HMAC Cart Signer]
+    F -->|Secure SHA-256 Hash| G[Client UI: Responsive Cards & Schedule]
+    G -->|Create Order with HMAC| H[PayPal Orders v2 REST API]
+    H -->|0% APR Pay in 4 / Pay Later| I[Verified Payment Capture & Audit]
+🔒 Security & Guardrail Contracts
+Server-Side HMAC-SHA256 Cart Signing: Prevents client-side price tampering by cryptographically binding SKU IDs and integer cent totals.
+
+Cent-Exact Floating Math Elimination: All calculations are executed in integer cents (Math.round(price * 100)) to eliminate float drift across 4 equal installments.
+
+Bill-Day Buffer Validation: Scans the 4-payment timeline against your selected bill/rent date (e.g., the 1st of the month) and flags potential liquidity collisions.
+
+🛠️ Testing & Execution
+To run your backend unit and integration test suite directly from your local terminal:
+
+Bash
 cd server
-npm install
-npm run dev
-
-### 2. Setup Frontend
-cd client
-npm install
-npm run dev
-
-## Testing Sandbox Checkout
-To test the PayPal Pay Later sandbox checkout locally:
-1. Configure your own `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET` in your `server/.env` file.
-2. Log into the PayPal sandbox popup using your own PayPal Developer Sandbox **Personal (Buyer)** account credentials.
-
+npm run build
+node --test "dist/**/*.spec.js"
