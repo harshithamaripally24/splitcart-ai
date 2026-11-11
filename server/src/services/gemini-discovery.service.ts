@@ -26,43 +26,43 @@ export function buildDynamicFallbackProducts(
   const products: Product[] = [
     {
       id: `sku-${slug}-core-1`,
-      name: `${cleanGoal} — Primary Anchor System`,
+      name: `${cleanGoal} — Premium Main System Setup`,
       brand: 'ProSeries',
-      category: 'Essential Hardware',
+      category: 'Core Equipment',
       price: p1,
       tier: 'essential',
       phase: 'PHASE_1_TODAY',
-      description: `Primary anchor component for ${cleanGoal}`
+      description: `Primary anchor unit configured for ${cleanGoal}`
     },
     {
       id: `sku-${slug}-core-2`,
-      name: `${cleanGoal} — Companion Essential Unit`,
+      name: `${cleanGoal} — Essential Companion Gear`,
       brand: 'ErgoCraft',
-      category: 'Core Companion',
+      category: 'Essential Gear',
       price: p2,
       tier: 'essential',
       phase: 'PHASE_1_TODAY',
-      description: `Core secondary item needed on Day 1`
+      description: `Required secondary piece for Day 1 setup`
     },
     {
       id: `sku-${slug}-acc-3`,
-      name: `${cleanGoal} — Performance Upgrade Module`,
+      name: `${cleanGoal} — High-Performance Upgrade Module`,
       brand: 'StudioLine',
       category: 'Upgrade',
       price: p3,
       tier: 'recommended',
       phase: 'PHASE_2_STAGGERED',
-      description: `Recommended expansion module for Phase 2`
+      description: `Expansion module scheduled for Phase 2 paycheck`
     },
     {
       id: `sku-${slug}-acc-4`,
-      name: `${cleanGoal} — Complete Accessory Kit`,
+      name: `${cleanGoal} — Professional Accessory Kit`,
       brand: 'Essentials+',
-      category: 'Accessory Kit',
+      category: 'Accessories',
       price: p4,
       tier: 'upgrade',
       phase: 'PHASE_2_STAGGERED',
-      description: `Finishing kit${tradeOffPrompt ? ` (${tradeOffPrompt.slice(0, 40)})` : ''}`
+      description: `Finishing kit and extras${tradeOffPrompt ? ` (${tradeOffPrompt.slice(0, 40)})` : ''}`
     }
   ];
 
@@ -71,15 +71,15 @@ export function buildDynamicFallbackProducts(
 
   return {
     bundleName: `Curated ${cleanGoal}`,
-    rationale: `Tailored 4-item bundle totaling $${total.toFixed(2)} ($${biWeekly} every 2 weeks), or split into Phase 1 Essentials today ($${((p1 + p2) / 4).toFixed(2)}/2wks) and Phase 2 Upgrades next month.`,
+    rationale: `Tailored 4-item setup totaling $${total.toFixed(2)} ($${biWeekly} every 2 weeks via 0% APR PayPal Pay in 4).`,
     products,
     chips: [
       {
-        label: `Lower Total by 15% (~$${Math.round((total * 0.85) / 4)}/2wks)`,
+        label: `Reduce Total by 15% (~$${Math.round((total * 0.85) / 4)}/2wks)`,
         prompt: `Swap to value-tier models to reduce total bundle cost by 15%`
       },
       {
-        label: `Upgrade Primary Item (+$${Math.round((total * 0.15) / 4)}/2wks)`,
+        label: `Upgrade Main Unit (+$${Math.round((total * 0.15) / 4)}/2wks)`,
         prompt: `Upgrade the primary anchor item to a flagship pro model`
       }
     ]
@@ -98,16 +98,16 @@ export async function discoverProductsWithGemini(
   negotiationChips: Array<{ label: string; prompt: string }>;
   sourceMode: 'gemini-live' | 'deterministic-fallback';
 }> {
-  const prompt = `You are SplitCart AI, a real-time Universal E-Commerce Product Discovery & PayPal Pay in 4 Cash-Flow Planner.
+  const prompt = `You are SplitCart AI, an e-commerce product discovery agent.
 Shopper Goal: "${cleanGoal}"
-Target Bi-Weekly Budget: $${cleanBudget.toFixed(2)} every 2 weeks (Target 4-payment total: ~$${targetTotal.toFixed(2)}).
-Adjustment Request: "${cleanTradeOff || 'None — curate the best 4-item bundle fitting their budget'}".
+Target Bi-Weekly Budget: $${cleanBudget.toFixed(2)} every 2 weeks (Target total: ~$${targetTotal.toFixed(2)}).
+Adjustment Request: "${cleanTradeOff || 'None — curate the best 4 items'}".
 
 Instructions:
-1. Discover 4 specific, real-world retail products (with real brand names, model names, and realistic US retail prices in USD) for "${cleanGoal}".
-2. Unless the user explicitly asked for an over-$1,500 setup, keep the sum of the 4 prices at or below $${targetTotal.toFixed(2)}.
+1. Discover 4 specific, real-world retail products with real brand names, realistic model names, and realistic US retail prices in USD for "${cleanGoal}".
+2. Keep the sum of the 4 prices at or below $${targetTotal.toFixed(2)}.
 3. Assign 2 core items to phase "PHASE_1_TODAY" and 2 secondary items to "PHASE_2_STAGGERED".
-4. Provide a concise shopper-friendly rationale and 2 follow-up customization chips.`;
+4. Provide a shopper-friendly rationale and 2 customization chips.`;
 
   try {
     const geminiCall = ai.models.generateContent({
@@ -156,7 +156,7 @@ Instructions:
     });
 
     const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Gemini API request timed out after 12s')), GEMINI_TIMEOUT_MS)
+      setTimeout(() => reject(new Error('Gemini API timeout')), GEMINI_TIMEOUT_MS)
     );
 
     const response = await Promise.race([geminiCall, timeoutPromise]);
