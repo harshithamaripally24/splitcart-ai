@@ -23,7 +23,8 @@ graph TD
     D & E --> F[Quote Registry & HMAC Signer]
     F -->|SHA-256 Hash| G[Client UI & Schedule]
     G -->|Create Order| H[PayPal Orders v2 API]
-    H -->|Pay in 4 / Pay Later| I[Verified Payment Capture] ```
+    H -->|Pay in 4 / Pay Later| I[Verified Payment Capture]
+ ```
 
 🔒 Security & Guardrail Contracts
 Server-Side HMAC-SHA256 Cart Signing: Prevents client-side price tampering by cryptographically binding SKU IDs and integer cent totals.
