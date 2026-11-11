@@ -1,31 +1,96 @@
 export interface Product {
   id: string;
   name: string;
-  category: 'monitor' | 'seating' | 'audio' | 'lighting';
-  price: number;
-  tier: 'budget' | 'recommended' | 'pro';
+  brand?: string;
+  category: string;
+  price: number; // Stored in USD, calculated via integer cents
+  tier: 'essential' | 'recommended' | 'upgrade';
+  phase: 'PHASE_1_TODAY' | 'PHASE_2_STAGGERED';
   description: string;
+  retailerHint?: string;
 }
 
-export const CATALOG: Product[] = [
-  // Monitors
-  { id: 'mon-1080', name: 'UltraClear 24" 1080p IPS Monitor', category: 'monitor', price: 130.00, tier: 'budget', description: '75Hz Full HD display with low blue light' },
-  { id: 'mon-2k', name: 'ProView 27" QHD 1440p USB-C Monitor', category: 'monitor', price: 260.00, tier: 'recommended', description: 'Sharp 1440p IPS display with 65W USB-C power delivery' },
-  { id: 'mon-4k', name: 'StudioMaster 32" 4K UHD HDR Display', category: 'monitor', price: 440.00, tier: 'pro', description: 'Factory-calibrated 4K display with 90W Thunderbolt hub' },
-  { id: 'mon-oled', name: 'CinePro 38" Dual-4K Reference OLED', category: 'monitor', price: 780.00, tier: 'pro', description: '10-bit reference OLED for color grading and studio mastering' },
+// Server-side canonical registry for dynamically discovered Gemini SKUs + fallback seeds
+const DYNAMIC_SKU_REGISTRY = new Map<string, Product>();
 
-  // Ergonomic Seating
-  { id: 'chair-mesh', name: 'ErgoFlex Breathable Mesh Task Chair', category: 'seating', price: 110.00, tier: 'budget', description: 'Lightweight mesh back with fixed lumbar support' },
-  { id: 'chair-pro', name: 'AeroPosture Pro Ergonomic Chair', category: 'seating', price: 210.00, tier: 'recommended', description: '4D adjustable armrests and dynamic weight-activated lumbar' },
-  { id: 'chair-exec', name: 'Sovereign Studio Executive Chair', category: 'seating', price: 480.00, tier: 'pro', description: 'Full-grain leather headrest and multi-tilt synchro mechanism' },
-
-  // Audio & Microphones
-  { id: 'mic-usb', name: 'SoloMic Compact USB Condenser', category: 'audio', price: 45.00, tier: 'budget', description: 'Plug-and-play cardioid USB mic with mute tap' },
-  { id: 'mic-pod', name: 'VocalCast Dynamic XLR/USB Broadcast Mic', category: 'audio', price: 135.00, tier: 'recommended', description: 'Broadcast voice isolation capsule with built-in DSP' },
-  { id: 'mic-studio', name: 'ProAir Studio XLR Mic + Dual Preamp Interface', category: 'audio', price: 320.00, tier: 'pro', description: 'Studio broadcast vocal chain with boom arm and 24-bit interface' },
-
-  // Lighting & Desk
-  { id: 'light-bar', name: 'ScreenBar Glare-Free LED Monitor Lamp', category: 'lighting', price: 35.00, tier: 'budget', description: 'Asymmetrical optical design eliminates screen reflection' },
-  { id: 'light-key', name: 'GlowStream Bi-Color Key Light Panel', category: 'lighting', price: 75.00, tier: 'recommended', description: 'Wi-Fi controlled edge-lit LED panel for video calls' },
-  { id: 'light-studio', name: 'Dual-Point Softbox Key & Fill Lighting Kit', category: 'lighting', price: 180.00, tier: 'pro', description: 'Two 45W CRI 97+ softboxes with desk C-stands' }
+export const SEED_CATALOG: Product[] = [
+  {
+    id: 'sku-breville-bambino',
+    name: 'Breville Bambino Plus Espresso Machine',
+    brand: 'Breville',
+    category: 'Espresso Machine',
+    price: 399.95,
+    tier: 'essential',
+    phase: 'PHASE_1_TODAY',
+    description: 'ThermoJet 3-second heat up with automatic microfoam steam wand',
+    retailerHint: 'Specialty Kitchen Retail'
+  },
+  {
+    id: 'sku-baratza-esp',
+    name: 'Baratza Encore ESP Conical Burr Grinder',
+    brand: 'Baratza',
+    category: 'Coffee Grinder',
+    price: 199.95,
+    tier: 'essential',
+    phase: 'PHASE_1_TODAY',
+    description: '40-step high-resolution espresso & filter grind adjustment',
+    retailerHint: 'Specialty Kitchen Retail'
+  },
+  {
+    id: 'sku-acaia-scale',
+    name: 'Timemore Black Mirror Nano Espresso Scale',
+    brand: 'Timemore',
+    category: 'Barista Precision',
+    price: 89.00,
+    tier: 'recommended',
+    phase: 'PHASE_2_STAGGERED',
+    description: '0.1g precision rechargeable scale with auto-tare flow timer',
+    retailerHint: 'Coffee Gear Direct'
+  },
+  {
+    id: 'sku-normcore-tamper',
+    name: 'Normcore V4 Spring-Loaded 54mm Tamper & WDT Kit',
+    brand: 'Normcore',
+    category: 'Barista Accessories',
+    price: 58.00,
+    tier: 'upgrade',
+    phase: 'PHASE_2_STAGGERED',
+    description: 'Calibrated 30lb pressure tamper with distribution tool',
+    retailerHint: 'Coffee Gear Direct'
+  }
 ];
+
+// Initialize registry with seeds
+for (const item of SEED_CATALOG) {
+  DYNAMIC_SKU_REGISTRY.set(item.id, item);
+}
+
+export function registerDynamicProducts(products: Product[]): Product[] {
+  const sanitized: Product[] = [];
+  for (const p of products) {
+    const cleanCents = Math.max(500, Math.min(500000, Math.round(Number(p.price) * 100)));
+    const cleanPrice = Number((cleanCents / 100).toFixed(2));
+    const item: Product = {
+      id: p.id.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48) || `sku-${Date.now()}`,
+      name: String(p.name || 'Curated Item').slice(0, 120),
+      brand: String(p.brand || 'Verified Brand').slice(0, 60),
+      category: String(p.category || 'General').slice(0, 50),
+      price: cleanPrice,
+      tier: ['essential', 'recommended', 'upgrade'].includes(p.tier) ? p.tier : 'recommended',
+      phase: p.phase === 'PHASE_2_STAGGERED' ? 'PHASE_2_STAGGERED' : 'PHASE_1_TODAY',
+      description: String(p.description || '').slice(0, 200),
+      retailerHint: String(p.retailerHint || 'Verified Retail Market Price').slice(0, 60)
+    };
+    DYNAMIC_SKU_REGISTRY.set(item.id, item);
+    sanitized.push(item);
+  }
+  return sanitized;
+}
+
+export function getProductById(id: string): Product | undefined {
+  return DYNAMIC_SKU_REGISTRY.get(id);
+}
+
+export function getRegistrySize(): number {
+  return DYNAMIC_SKU_REGISTRY.size;
+}
