@@ -15,7 +15,7 @@ import {
   Check
 } from 'lucide-react';
 import { Navbar } from './components/layout/Navbar';
-import type { PlanData } from './types/bundle.types';
+import type { PlanData, Product } from './types/bundle.types';
 import { API_URL, fetchClientConfig, requestBundlePlan } from './services/splitcart-api.client';
 
 const EXPLORE_IDEAS = [
@@ -32,6 +32,15 @@ const EXPLORE_IDEAS = [
   }
 ];
 
+interface CustomSelectionState {
+  skuIds: string[];
+  items: Product[];
+  totalPrice: number;
+  cartHash: string;
+  biWeeklyAmount: number;
+  installments: [number, number, number, number];
+}
+
 export default function App() {
   const [paypalClientId, setPaypalClientId] = useState('');
   const [loading, setLoading] = useState(false);
@@ -41,7 +50,8 @@ export default function App() {
   const [rentDueDay, setRentDueDay] = useState<number>(1);
   const [customTradeOff, setCustomTradeOff] = useState('');
   const [plan, setPlan] = useState<PlanData | null>(null);
-  const [checkoutMode, setCheckoutMode] = useState<'FULL' | 'PHASE_1' | 'PHASE_2'>('FULL');
+  const [checkoutMode, setCheckoutMode] = useState<'FULL' | 'PHASE_1' | 'PHASE_2' | 'CUSTOM'>('FULL');
+  const [customCart, setCustomCart] = useState<CustomSelectionState | null>(null);
   const [showPhasedPlanner, setShowPhasedPlanner] = useState(false);
   const [checkoutComplete, setCheckoutComplete] = useState<any>(null);
 
@@ -62,6 +72,7 @@ export default function App() {
     setLoading(true);
     setErrorBanner(null);
     setCheckoutComplete(null);
+    setCustomCart(null);
     setGoal(selectedGoal);
     setBudget(selectedBudget);
 
@@ -96,7 +107,26 @@ export default function App() {
 
   const getActiveCheckoutPayload = () => {
     if (!plan) {
-      return { skuIds: [], cartHash: '', totalPrice: 0, biWeekly: 0, label: 'Complete Bundle', items: [] };
+      return {
+        skuIds: [],
+        cartHash: '',
+        totalPrice: 0,
+        biWeekly: 0,
+        installments: [0, 0, 0, 0] as [number, number, number, number],
+        label: 'Complete Bundle',
+        items: []
+      };
+    }
+    if (checkoutMode === 'CUSTOM' && customCart) {
+      return {
+        skuIds: customCart.skuIds,
+        cartHash: customCart.cartHash,
+        totalPrice: customCart.totalPrice,
+        biWeekly: customCart.biWeeklyAmount,
+        installments: customCart.installments,
+        label: `Custom Selection (${customCart.items.length} of ${plan.items.length} Items)`,
+        items: customCart.items
+      };
     }
     if (checkoutMode === 'PHASE_1') {
       const p1 = plan.phasedSplit.phase1;
@@ -105,6 +135,7 @@ export default function App() {
         cartHash: p1.cartHash,
         totalPrice: p1.totalPrice,
         biWeekly: p1.biWeeklyAmount,
+        installments: p1.installments,
         label: 'Phase 1: Day-1 Essentials (Buy Today)',
         items: p1.items
       };
@@ -116,6 +147,7 @@ export default function App() {
         cartHash: p2.cartHash,
         totalPrice: p2.totalPrice,
         biWeekly: p2.biWeeklyAmount,
+        installments: p2.installments,
         label: 'Phase 2: Upgrades (+28 Days)',
         items: p2.items
       };
@@ -125,9 +157,67 @@ export default function App() {
       cartHash: plan.cartHash,
       totalPrice: plan.totalPrice,
       biWeekly: plan.payIn4.biWeeklyAmount,
-      label: 'All 4 Curated Items',
+      installments: plan.payIn4.installments,
+      label: `All ${plan.items.length} Curated Items`,
       items: plan.items
     };
+  };
+
+  const toggleIndividualItem = async (clickedSkuId: string) => {
+    if (!plan) return;
+    setErrorBanner(null);
+    setCheckoutComplete(null);
+
+    const currentPayload = getActiveCheckoutPayload();
+    const currentSet = new Set(currentPayload.skuIds);
+
+    if (currentSet.has(clickedSkuId)) {
+      if (currentSet.size <= 1) {
+        setErrorBanner('At least 1 item must remain in your checkout bag.');
+        return;
+      }
+      currentSet.delete(clickedSkuId);
+    } else {
+      currentSet.add(clickedSkuId);
+    }
+
+    const nextSkuIds = plan.items.filter(i => currentSet.has(i.id)).map(i => i.id);
+
+    // Check if the new selection matches Full, Phase 1, or Phase 2 exactly
+    if (nextSkuIds.length === plan.items.length) {
+      setCheckoutMode('FULL');
+      setCustomCart(null);
+      return;
+    }
+    const p1Ids = plan.phasedSplit.phase1.skuIds;
+    if (nextSkuIds.length === p1Ids.length && nextSkuIds.every(id => p1Ids.includes(id))) {
+      setCheckoutMode('PHASE_1');
+      setCustomCart(null);
+      return;
+    }
+    const p2Ids = plan.phasedSplit.phase2.skuIds;
+    if (nextSkuIds.length === p2Ids.length && nextSkuIds.every(id => p2Ids.includes(id))) {
+      setCheckoutMode('PHASE_2');
+      setCustomCart(null);
+      return;
+    }
+
+    // Otherwise, sign the custom mix-and-match selection with the backend
+    try {
+      const res = await fetch(`${API_URL}/api/agent/sign-selection`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skuIds: nextSkuIds })
+      });
+      const signed = await res.json();
+      if (!res.ok || signed.error) {
+        throw new Error(signed.error || 'Could not sign custom selection.');
+      }
+      setCustomCart(signed);
+      setCheckoutMode('CUSTOM');
+    } catch (err: any) {
+      setErrorBanner(err.message || 'Failed to update custom item selection.');
+    }
   };
 
   const checkRentCollision = (isoOrDateStr: string) => {
@@ -164,7 +254,7 @@ export default function App() {
             </div>
             <div className="hidden md:flex items-center gap-2 text-xs text-slate-300 bg-white/5 px-3.5 py-2 rounded-xl border border-white/10">
               <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>0% APR Pay in 4 • Bi-Weekly Paycheck Staggering</span>
+              <span>0% APR Pay in 4 • Mix & Match Any Items or Paycheck Phases</span>
             </div>
           </div>
 
@@ -271,44 +361,38 @@ export default function App() {
                   <div className="max-w-xl">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                        Curated Retail Bundle
+                        Interactive Retail Bundle
                       </span>
                       <span className="text-[11px] font-semibold text-slate-500">
-                        Target Cap: ${budget}/2wks (${budget * 4} total)
+                        Click any card below to check/uncheck individual items
                       </span>
                     </div>
                     <h2 className="text-xl font-extrabold text-slate-900">{plan.bundleName}</h2>
                     <p className="text-xs text-slate-600 mt-1">{plan.rationale}</p>
                   </div>
                   <div className="text-right bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200">
-                    <span className="text-[11px] font-bold uppercase text-slate-400 block">Full Bundle Total</span>
-                    <span className="text-2xl font-black text-slate-900">${plan.totalPrice.toFixed(2)}</span>
-                    {plan.payIn4.eligible ? (
-                      <p className="text-xs font-bold text-emerald-600">
-                        4x ${plan.payIn4.biWeeklyAmount.toFixed(2)} / 2 wks (0% APR)
-                      </p>
-                    ) : (
-                      <p className="text-xs font-bold text-amber-600">
-                        Exceeds $1,500 limit • Auto-split into 2 phases
-                      </p>
-                    )}
+                    <span className="text-[11px] font-bold uppercase text-slate-400 block">Selected Total</span>
+                    <span className="text-2xl font-black text-slate-900">${activeCheckout.totalPrice.toFixed(2)}</span>
+                    <p className="text-xs font-bold text-emerald-600">
+                      4x ${activeCheckout.biWeekly.toFixed(2)} / 2 wks (0% APR)
+                    </p>
                   </div>
                 </div>
               )}
 
-              {/* PHASE FILTER TABS ABOVE CARDS */}
+              {/* PHASE PRESET TABS + CUSTOM SELECTION INDICATOR */}
               {plan && (
                 <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-100 p-1.5 rounded-xl">
                   <button
                     onClick={() => {
                       setCheckoutMode('FULL');
+                      setCustomCart(null);
                       setCheckoutComplete(null);
                     }}
-                    disabled={!plan.payIn4.eligible}
                     className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition cursor-pointer ${
                       checkoutMode === 'FULL'
                         ? 'bg-white text-slate-900 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900 disabled:opacity-40'
+                        : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
                     All 4 Items (${plan.totalPrice.toFixed(2)} • ${plan.payIn4.biWeeklyAmount.toFixed(2)}/2wks)
@@ -316,6 +400,7 @@ export default function App() {
                   <button
                     onClick={() => {
                       setCheckoutMode('PHASE_1');
+                      setCustomCart(null);
                       setCheckoutComplete(null);
                     }}
                     className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition cursor-pointer ${
@@ -329,6 +414,7 @@ export default function App() {
                   <button
                     onClick={() => {
                       setCheckoutMode('PHASE_2');
+                      setCustomCart(null);
                       setCheckoutComplete(null);
                     }}
                     className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition cursor-pointer ${
@@ -339,10 +425,15 @@ export default function App() {
                   >
                     Phase 2: Wait +28d (${plan.phasedSplit.phase2.biWeeklyAmount.toFixed(2)}/2wks)
                   </button>
+                  {checkoutMode === 'CUSTOM' && customCart && (
+                    <span className="py-2 px-3 rounded-lg text-xs font-extrabold bg-emerald-600 text-white shadow-xs">
+                      Custom Mix ({customCart.items.length} Items • ${customCart.biWeeklyAmount.toFixed(2)}/2wks)
+                    </span>
+                  )}
                 </div>
               )}
 
-              {/* MODERN CONSUMER PRODUCT CARDS (NO AG GRID) */}
+              {/* INTERACTIVE PRODUCT CARDS (CLICK ANY CARD TO TOGGLE IN/OUT OF CART) */}
               {loading ? (
                 <div className="w-full py-16 flex flex-col items-center justify-center bg-slate-50 rounded-xl border border-slate-200 text-sm text-slate-600 gap-3">
                   <RefreshCw className="w-7 h-7 animate-spin text-blue-600" />
@@ -358,14 +449,11 @@ export default function App() {
                     return (
                       <div
                         key={item.id}
-                        onClick={() => {
-                          setCheckoutMode(isPhase1 ? 'PHASE_1' : 'PHASE_2');
-                          setCheckoutComplete(null);
-                        }}
+                        onClick={() => toggleIndividualItem(item.id)}
                         className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
                           isIncludedInActiveCart
                             ? 'bg-white border-blue-600 shadow-sm'
-                            : 'bg-slate-50/70 border-slate-200 opacity-65 hover:opacity-100'
+                            : 'bg-slate-50/70 border-slate-200 opacity-60 hover:opacity-95'
                         }`}
                       >
                         <div>
@@ -377,16 +465,22 @@ export default function App() {
                                   : 'bg-indigo-100 text-indigo-800'
                               }`}
                             >
-                              {isPhase1 ? 'Paycheck 1 • Buy Today' : 'Paycheck 2 • Wait 28 Days'}
+                              {isPhase1 ? 'AI Suggested: Paycheck 1' : 'AI Suggested: Paycheck 2 (+28d)'}
                             </span>
                             <span
-                              className={`w-5 h-5 rounded-full flex items-center justify-center text-xs ${
+                              className={`px-2 py-0.5 rounded-full flex items-center gap-1 text-[10px] font-bold ${
                                 isIncludedInActiveCart
                                   ? 'bg-blue-600 text-white'
-                                  : 'border border-slate-300 bg-white text-transparent'
+                                  : 'border border-slate-300 bg-white text-slate-500'
                               }`}
                             >
-                              <Check className="w-3 h-3" />
+                              {isIncludedInActiveCart ? (
+                                <>
+                                  <Check className="w-3 h-3" /> In Bag
+                                </>
+                              ) : (
+                                '+ Add'
+                              )}
                             </span>
                           </div>
 
@@ -421,10 +515,10 @@ export default function App() {
 
               {plan && (
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2 text-xs font-bold uppercase text-slate-700">
                       <Sparkles className="w-4 h-4 text-blue-600" />
-                      <span>Customize or Swap Items with AI:</span>
+                      <span>Customize or Swap Any Item with AI:</span>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {plan.negotiationChips.map((chip, idx) => (
@@ -442,7 +536,7 @@ export default function App() {
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      placeholder="Ask AI to swap any item or change budget (e.g., 'Swap to a cheaper grinder', 'Keep under $450')..."
+                      placeholder="Ask AI to swap any item, add a product, or change budget (e.g., 'Swap to a cheaper grinder', 'Keep under $450')..."
                       value={customTradeOff}
                       onChange={e => setCustomTradeOff(e.target.value)}
                       onKeyDown={e => {
@@ -498,12 +592,7 @@ export default function App() {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {plan.payIn4.schedule.map((slot, idx) => {
                     const collision = checkRentCollision(slot.isoDate || slot.date);
-                    const displayAmount =
-                      checkoutMode === 'PHASE_1'
-                        ? plan.phasedSplit.phase1.installments[idx]
-                        : checkoutMode === 'PHASE_2'
-                        ? plan.phasedSplit.phase2.installments[idx]
-                        : slot.amount;
+                    const displayAmount = activeCheckout.installments[idx] ?? slot.amount;
                     return (
                       <div
                         key={slot.installment}

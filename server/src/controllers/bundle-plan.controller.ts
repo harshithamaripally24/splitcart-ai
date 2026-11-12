@@ -1,6 +1,7 @@
 ﻿import { Request, Response, NextFunction } from 'express';
 import { buildCashFlowBundlePlan } from '../services/cashflow-planner.service';
 import { getPayPalAccessToken } from '../services/paypal-checkout.service';
+import { computeInstallmentsInDollars, verifyAndSignCart } from '../services/cart-crypto.service';
 import { getRegisteredSkuCount } from '../repositories/quote-registry.repository';
 import { ENV } from '../config/env.config';
 
@@ -39,6 +40,25 @@ export async function createBundlePlanHandler(req: Request, res: Response, next:
       Number(rentDueDay) || 1
     );
     res.json(plan);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export function signCustomSelectionHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { skuIds } = req.body || {};
+    const verified = verifyAndSignCart(skuIds);
+    const installments = computeInstallmentsInDollars(verified.totalCents);
+    res.json({
+      skuIds: verified.items.map(i => i.id),
+      items: verified.items,
+      totalPrice: verified.total,
+      cartHash: verified.cartHash,
+      biWeeklyAmount: installments[0],
+      installments,
+      payIn4Eligible: verified.totalCents >= 3000 && verified.totalCents <= 150000
+    });
   } catch (err) {
     next(err);
   }
