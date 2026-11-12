@@ -5,23 +5,25 @@ import { Product } from '../types/commerce.types';
 const ai = new GoogleGenAI({ apiKey: ENV.GEMINI_API_KEY });
 const GEMINI_TIMEOUT_MS = 12000;
 
+interface CatalogItemTemplate {
+  name: string;
+  brand: string;
+  category: string;
+  weight: number;
+  tier: 'essential' | 'recommended' | 'upgrade';
+  phase: 'PHASE_1_TODAY' | 'PHASE_2_STAGGERED';
+  description: string;
+}
+
 interface CuratedCatalogTemplate {
   keywords: string[];
   bundleName: string;
-  items: Array<{
-    name: string;
-    brand: string;
-    category: string;
-    weight: number;
-    tier: 'essential' | 'recommended' | 'upgrade';
-    phase: 'PHASE_1_TODAY' | 'PHASE_2_STAGGERED';
-    description: string;
-  }>;
+  items: CatalogItemTemplate[];
 }
 
 const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
   {
-    keywords: ['espresso', 'coffee', 'matcha', 'cafe', 'barista'],
+    keywords: ['espresso', 'coffee', 'matcha', 'cafe', 'barista', 'latte', 'grinder'],
     bundleName: 'Artisan Home Espresso & Matcha Bar',
     items: [
       {
@@ -63,7 +65,21 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
     ]
   },
   {
-    keywords: ['camp', 'tent', 'outdoor', 'hiking', 'backpacking'],
+    keywords: [
+      'camp',
+      'tent',
+      'outdoor',
+      'hiking',
+      'backpacking',
+      'spur',
+      'agnes',
+      'therm-a-rest',
+      'neoair',
+      'jetboil',
+      'black diamond',
+      'headlamp',
+      'sleeping pad'
+    ],
     bundleName: 'Ultralight 2-Person Backcountry Camping Kit',
     items: [
       {
@@ -105,7 +121,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
     ]
   },
   {
-    keywords: ['baby', 'nursery', 'newborn', 'crib', 'monitor'],
+    keywords: ['baby', 'nursery', 'newborn', 'crib', 'monitor', 'babyletto', 'nanit', 'newton', 'hatch', 'stroller'],
     bundleName: 'Smart Newborn Nursery & Sleep Safety Setup',
     items: [
       {
@@ -147,7 +163,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
     ]
   },
   {
-    keywords: ['gym', 'fitness', 'dumbbell', 'workout', 'cardio'],
+    keywords: ['gym', 'fitness', 'dumbbell', 'workout', 'cardio', 'bowflex', 'bench', 'manduka', 'theragun', 'weights'],
     bundleName: 'Compact Apartment Strength & HIIT Home Gym',
     items: [
       {
@@ -189,7 +205,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
     ]
   },
   {
-    keywords: ['video', 'camera', 'podcast', 'cinema', 'studio', '4k'],
+    keywords: ['video', 'camera', 'podcast', 'cinema', 'studio', '4k', 'sony', 'fx30', 'sigma', 'shure', 'aputure'],
     bundleName: '4K Creator Cinema & Podcast Production Studio',
     items: [
       {
@@ -231,7 +247,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
     ]
   },
   {
-    keywords: ['office', 'desk', 'monitor', 'ergonomic', 'engineer', 'laptop'],
+    keywords: ['office', 'desk', 'monitor', 'ergonomic', 'engineer', 'laptop', 'dell', 'keychron', 'keyboard', 'logitech', 'benq'],
     bundleName: 'Ergonomic Software Engineer Home Office Setup',
     items: [
       {
@@ -285,29 +301,112 @@ export function buildDynamicFallbackProducts(
   chips: Array<{ label: string; prompt: string }>;
 } {
   const cleanGoal = userGoal.trim() || 'Craft Home Espresso & Matcha Bar Setup';
-  const lowerGoal = `${cleanGoal} ${tradeOffPrompt || ''}`.toLowerCase();
+  const searchTerms = `${cleanGoal} ${tradeOffPrompt || ''}`
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(w => w.length >= 2);
+  const fullLower = `${cleanGoal} ${tradeOffPrompt || ''}`.toLowerCase();
 
-  const isOver1500 = lowerGoal.includes('1,500') || lowerGoal.includes('1,700') || lowerGoal.includes('cinema');
+  const isOver1500 = fullLower.includes('1,500') || fullLower.includes('1,700') || fullLower.includes('cinema');
   let effectiveTotal = isOver1500 ? 1680 : Math.max(120, Math.min(2400, targetTotal));
 
-  if (lowerGoal.includes('15%') || lowerGoal.includes('cheaper') || lowerGoal.includes('reduce')) {
+  if (fullLower.includes('15%') || fullLower.includes('cheaper') || fullLower.includes('reduce')) {
     effectiveTotal = Math.round(effectiveTotal * 0.85);
-  } else if (lowerGoal.includes('upgrade') || lowerGoal.includes('flagship')) {
+  } else if (fullLower.includes('upgrade') || fullLower.includes('flagship')) {
     effectiveTotal = Math.round(effectiveTotal * 1.15);
   }
 
-  const matched =
-    REAL_RETAIL_TEMPLATES.find(t => t.keywords.some(k => lowerGoal.includes(k))) || REAL_RETAIL_TEMPLATES[0];
+  // Score every template by checking keywords AND every item's name, brand, category, and description
+  let bestTemplate: CuratedCatalogTemplate | null = null;
+  let bestScore = 0;
+
+  for (const tpl of REAL_RETAIL_TEMPLATES) {
+    const searchableText = [
+      tpl.bundleName,
+      ...tpl.keywords,
+      ...tpl.items.map(i => `${i.name} ${i.brand} ${i.category} ${i.description}`)
+    ]
+      .join(' ')
+      .toLowerCase();
+
+    let score = 0;
+    for (const term of searchTerms) {
+      if (searchableText.includes(term)) score += 1;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestTemplate = tpl;
+    }
+  }
 
   const slug = cleanGoal.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 16) || 'item';
 
-  const p1 = Math.round(effectiveTotal * matched.items[0].weight);
-  const p2 = Math.round(effectiveTotal * matched.items[1].weight);
-  const p3 = Math.round(effectiveTotal * matched.items[2].weight);
+  // If the user typed a custom product/goal not in the 6 templates, build tailored items for their exact search
+  let selectedItems: CatalogItemTemplate[];
+  let resolvedBundleName: string;
+
+  if (bestTemplate && bestScore > 0) {
+    resolvedBundleName = bestTemplate.bundleName;
+    // If they searched for a specific item inside the template (e.g. "Black Diamond" or "Spur HV"), promote it to Phase 1
+    const sorted = [...bestTemplate.items].sort((a, b) => {
+      const aMatch = searchTerms.some(t => `${a.name} ${a.brand}`.toLowerCase().includes(t)) ? 1 : 0;
+      const bMatch = searchTerms.some(t => `${b.name} ${b.brand}`.toLowerCase().includes(t)) ? 1 : 0;
+      return bMatch - aMatch;
+    });
+    selectedItems = sorted.map((item, idx) => ({
+      ...item,
+      phase: idx < 2 ? 'PHASE_1_TODAY' : 'PHASE_2_STAGGERED'
+    }));
+  } else {
+    const titleGoal = cleanGoal.charAt(0).toUpperCase() + cleanGoal.slice(1);
+    resolvedBundleName = `${titleGoal} — Pay in 4 Shopping Plan`;
+    selectedItems = [
+      {
+        name: `${titleGoal} (Flagship Primary Model)`,
+        brand: 'Verified Retail',
+        category: 'Primary Item',
+        weight: 0.48,
+        tier: 'essential',
+        phase: 'PHASE_1_TODAY',
+        description: `Top-rated retail model matching "${cleanGoal}" sized for your Pay in 4 budget`
+      },
+      {
+        name: `${titleGoal} Companion & Protection Pack`,
+        brand: 'Essentials',
+        category: 'Core Add-On',
+        weight: 0.27,
+        tier: 'essential',
+        phase: 'PHASE_1_TODAY',
+        description: `Essential companion gear and extended care kit for ${cleanGoal}`
+      },
+      {
+        name: `${titleGoal} Performance Upgrade Kit`,
+        brand: 'ProLine',
+        category: 'Upgrade',
+        weight: 0.15,
+        tier: 'recommended',
+        phase: 'PHASE_2_STAGGERED',
+        description: `Staggered Phase 2 upgrade scheduled for your next paycheck cycle (+28d)`
+      },
+      {
+        name: `${titleGoal} Travel & Storage Organizer`,
+        brand: 'GearCraft',
+        category: 'Accessories',
+        weight: 0.10,
+        tier: 'upgrade',
+        phase: 'PHASE_2_STAGGERED',
+        description: `Protective organizer and everyday maintenance accessories`
+      }
+    ];
+  }
+
+  const p1 = Math.round(effectiveTotal * selectedItems[0].weight);
+  const p2 = Math.round(effectiveTotal * selectedItems[1].weight);
+  const p3 = Math.round(effectiveTotal * selectedItems[2].weight);
   const p4 = Math.max(19, effectiveTotal - (p1 + p2 + p3));
   const prices = [p1, p2, p3, p4];
 
-  const products: Product[] = matched.items.map((item, idx) => ({
+  const products: Product[] = selectedItems.map((item, idx) => ({
     id: `sku-${slug}-${idx + 1}`,
     name: item.name,
     brand: item.brand,
@@ -322,8 +421,8 @@ export function buildDynamicFallbackProducts(
   const biWeekly = (total / 4).toFixed(2);
 
   return {
-    bundleName: matched.bundleName,
-    rationale: `Curated real-world retail items totaling $${total.toFixed(2)} ($${biWeekly} every 2 weeks via 0% APR PayPal Pay in 4). Toggle individual items below or split across paychecks.`,
+    bundleName: resolvedBundleName,
+    rationale: `Curated real-world retail items totaling $${total.toFixed(2)} ($${biWeekly} every 2 weeks via 0% APR PayPal Pay in 4). Toggle phases below to fit your paycheck.`,
     products,
     chips: [
       {
@@ -336,6 +435,58 @@ export function buildDynamicFallbackProducts(
       }
     ]
   };
+}
+
+async function callGeminiModel(modelName: string, prompt: string) {
+  const geminiCall = ai.models.generateContent({
+    model: modelName,
+    contents: prompt,
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          bundleName: { type: Type.STRING },
+          rationale: { type: Type.STRING },
+          products: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                id: { type: Type.STRING },
+                name: { type: Type.STRING },
+                brand: { type: Type.STRING },
+                category: { type: Type.STRING },
+                price: { type: Type.NUMBER },
+                tier: { type: Type.STRING },
+                phase: { type: Type.STRING },
+                description: { type: Type.STRING }
+              },
+              required: ['id', 'name', 'brand', 'category', 'price', 'tier', 'phase', 'description']
+            }
+          },
+          negotiationChips: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                label: { type: Type.STRING },
+                prompt: { type: Type.STRING }
+              },
+              required: ['label', 'prompt']
+            }
+          }
+        },
+        required: ['bundleName', 'rationale', 'products', 'negotiationChips']
+      }
+    }
+  });
+
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(`Gemini timeout on ${modelName}`)), GEMINI_TIMEOUT_MS)
+  );
+
+  return Promise.race([geminiCall, timeoutPromise]);
 }
 
 export async function discoverProductsWithGemini(
@@ -367,61 +518,19 @@ Target Bi-Weekly Budget: $${cleanBudget.toFixed(2)} every 2 weeks (Target total 
 Custom Request: "${cleanTradeOff || 'Recommend the best real-world retail items'}".
 
 Instructions:
-1. Recommend 4 specific, real-world retail products with authentic brand names (e.g., Sony, Breville, Apple, Dyson, REI, Nuna) and specific model names that match "${cleanGoal}". Never use generic placeholder names.
+1. Recommend 4 specific, real-world retail products with authentic brand names and specific model names that match "${cleanGoal}". If "${cleanGoal}" is a specific product or brand (like "Black Diamond" or "Big Agnes Copper Spur"), make that exact product Item #1 and pair it with 3 matching companion items.
 2. Keep the sum of the 4 prices close to $${targetTotal.toFixed(2)}.
 3. Mark the 2 most important items as phase "PHASE_1_TODAY" (Buy Today) and the 2 secondary/accessory items as "PHASE_2_STAGGERED" (Next Paycheck +28d).
 4. Provide a concise shopper rationale and 2 helpful price/model swap chips.`;
 
   try {
-    const geminiCall = ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            bundleName: { type: Type.STRING },
-            rationale: { type: Type.STRING },
-            products: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  id: { type: Type.STRING },
-                  name: { type: Type.STRING },
-                  brand: { type: Type.STRING },
-                  category: { type: Type.STRING },
-                  price: { type: Type.NUMBER },
-                  tier: { type: Type.STRING },
-                  phase: { type: Type.STRING },
-                  description: { type: Type.STRING }
-                },
-                required: ['id', 'name', 'brand', 'category', 'price', 'tier', 'phase', 'description']
-              }
-            },
-            negotiationChips: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  label: { type: Type.STRING },
-                  prompt: { type: Type.STRING }
-                },
-                required: ['label', 'prompt']
-              }
-            }
-          },
-          required: ['bundleName', 'rationale', 'products', 'negotiationChips']
-        }
-      }
-    });
+    let response;
+    try {
+      response = await callGeminiModel('gemini-3.8-flash', prompt);
+    } catch {
+      response = await callGeminiModel('gemini-2.5-flash', prompt);
+    }
 
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Gemini API timeout')), GEMINI_TIMEOUT_MS)
-    );
-
-    const response = await Promise.race([geminiCall, timeoutPromise]);
     const parsed = JSON.parse(response.text || '{}');
 
     if (!Array.isArray(parsed.products) || parsed.products.length < 2) {
