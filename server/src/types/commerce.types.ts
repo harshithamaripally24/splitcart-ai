@@ -1,4 +1,4 @@
-﻿export interface Product {
+export interface Product {
   id: string;
   name: string;
   brand?: string;
@@ -8,6 +8,7 @@
   phase: 'PHASE_1_TODAY' | 'PHASE_2_STAGGERED';
   description: string;
   retailerHint?: string;
+  itemSig?: string;
 }
 
 export interface PhasedCartGroup {

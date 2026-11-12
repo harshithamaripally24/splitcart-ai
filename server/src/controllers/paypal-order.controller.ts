@@ -1,4 +1,4 @@
-﻿import { Request, Response, NextFunction } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import { createPayPalOrder, capturePayPalOrder } from '../services/paypal-checkout.service';
 
 export async function createOrderHandler(req: Request, res: Response, next: NextFunction) {

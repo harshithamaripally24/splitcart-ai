@@ -1,13 +1,18 @@
-﻿import { Request, Response, NextFunction } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import { buildCashFlowBundlePlan } from '../services/cashflow-planner.service';
 import { getPayPalAccessToken } from '../services/paypal-checkout.service';
-import { computeInstallmentsInDollars, verifyAndSignCart } from '../services/cart-crypto.service';
+import {
+  computeInstallmentsInDollars,
+  verifyAndSignCart,
+  verifySingleItemQuote
+} from '../services/cart-crypto.service';
 import {
   findProductBySku,
   getRegisteredSkuCount,
   registerProductsInQuoteStore
 } from '../repositories/quote-registry.repository';
 import { ENV } from '../config/env.config';
+import { Product } from '../types/commerce.types';
 
 export async function getHealthStatus(_req: Request, res: Response) {
   let paypalSandboxConnected = false;
@@ -37,12 +42,16 @@ export function getPublicClientConfig(_req: Request, res: Response) {
 export async function createBundlePlanHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const { userGoal, biWeeklyBudget, tradeOffPrompt, rentDueDay } = req.body || {};
+    const parsedBudget =
+      biWeeklyBudget === undefined || biWeeklyBudget === '' ? 160 : Number(biWeeklyBudget);
+
     const plan = await buildCashFlowBundlePlan(
       userGoal || 'Craft Home Espresso & Matcha Bar Setup',
-      Number(biWeeklyBudget) || 160,
+      parsedBudget,
       tradeOffPrompt,
       Number(rentDueDay) || 1
     );
+
     res.json(plan);
   } catch (err) {
     next(err);
@@ -53,18 +62,22 @@ export function signCustomSelectionHandler(req: Request, res: Response, next: Ne
   try {
     const { skuIds, fallbackItems } = req.body || {};
 
-    // If Render restarted and cleared in-memory store, re-hydrate missing SKUs before signing
     if (Array.isArray(fallbackItems) && fallbackItems.length > 0) {
-      const missing = fallbackItems.filter((item: any) => item?.id && !findProductBySku(String(item.id)));
-      if (missing.length > 0) {
-        registerProductsInQuoteStore(missing);
+      const verifiedMissing = fallbackItems.filter(
+        (item: any) =>
+          item?.id &&
+          !findProductBySku(String(item.id)) &&
+          verifySingleItemQuote(String(item.id), Number(item.price), item.itemSig)
+      );
+      if (verifiedMissing.length > 0) {
+        registerProductsInQuoteStore(verifiedMissing);
       }
     }
 
     const verified = verifyAndSignCart(skuIds);
     const installments = computeInstallmentsInDollars(verified.totalCents);
     res.json({
-      skuIds: verified.items.map(i => i.id),
+      skuIds: verified.items.map((i: Product) => i.id),
       items: verified.items,
       totalPrice: verified.total,
       cartHash: verified.cartHash,

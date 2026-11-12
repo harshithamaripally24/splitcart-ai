@@ -1,4 +1,4 @@
-﻿# SplitCart AI - Primary Research Dossier, Graphs & Competitive Defense
+# SplitCart AI - Primary Research Dossier, Graphs & Competitive Defense
 
 ## 1. Primary Federal Reserve & CFPB Datasets (Direct Citations)
 

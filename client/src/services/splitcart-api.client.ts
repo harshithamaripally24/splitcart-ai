@@ -1,4 +1,4 @@
-﻿import type { PlanData } from '../types/bundle.types';
+import type { PlanData } from '../types/bundle.types';
 
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 

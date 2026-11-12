@@ -1,4 +1,4 @@
-﻿import { Request, Response, NextFunction } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import { ValidationError } from '../errors/http-errors';
 
 export function globalErrorHandler(err: any, _req: Request, res: Response, _next: NextFunction) {

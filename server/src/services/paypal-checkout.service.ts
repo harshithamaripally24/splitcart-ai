@@ -1,6 +1,6 @@
-﻿import { ENV } from '../config/env.config';
+import { ENV } from '../config/env.config';
 import { ValidationError, UpstreamServiceError } from '../errors/http-errors';
-import { verifyAndSignCart } from './cart-crypto.service';
+import { verifyAndSignCart, verifyCartHashMatch } from './cart-crypto.service';
 
 const REQUEST_TIMEOUT_MS = 10000;
 const VALID_PAYPAL_ORDER_ID = /^[A-Za-z0-9]{10,36}$/;
@@ -48,14 +48,14 @@ export async function createPayPalOrder(skuIds: string[], expectedCartHash?: str
     throw new ValidationError('CART_HASH_REQUIRED: A valid server-signed cartHash is required.');
   }
 
-  if (expectedCartHash !== cartHash) {
+  if (!verifyCartHashMatch(cartHash, expectedCartHash)) {
     throw new ValidationError(
-      `CART_TAMPER_DETECTED: Provided cartHash (${expectedCartHash}) does not match server HMAC (${cartHash}).`
+      'CART_TAMPER_DETECTED: Provided cartHash does not match server signature.'
     );
   }
 
   const token = await getPayPalAccessToken();
-  const timeBucket = Math.floor(Date.now() / (5 * 60 * 1000));
+  const timeBucket = Math.floor(Date.now() / (10000));
   const idempotencyKey = `splitcart-order-${cartHash}-${timeBucket}`;
 
   const payload = {
@@ -145,7 +145,7 @@ export async function capturePayPalOrder(orderId: string) {
   const captureUnit = captureData?.purchase_units?.[0]?.payments?.captures?.[0];
   const captureStatus = captureUnit?.status || captureData?.status || 'UNKNOWN';
 
-  if (captureStatus !== 'COMPLETED') {
+  if (captureStatus !== 'COMPLETED' && captureStatus !== 'PENDING' && captureStatus !== 'APPROVED') {
     throw new ValidationError(`CAPTURE_NOT_COMPLETED: PayPal returned status "${captureStatus}".`);
   }
 

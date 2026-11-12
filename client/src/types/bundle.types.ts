@@ -1,4 +1,4 @@
-﻿export interface Product {
+export interface Product {
   id: string;
   name: string;
   brand?: string;
@@ -6,6 +6,7 @@
   price: number;
   tier: string;
   phase: 'PHASE_1_TODAY' | 'PHASE_2_STAGGERED';
+  itemSig?: string;
   description: string;
   retailerHint?: string;
 }

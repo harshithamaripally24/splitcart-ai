@@ -1,4 +1,4 @@
-﻿export function Navbar() {
+export function Navbar() {
   return (
     <nav className="bg-white border-b border-slate-200 px-6 py-3.5 sticky top-0 z-20 shadow-xs">
       <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">

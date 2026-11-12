@@ -1,5 +1,5 @@
-﻿import { useState, useEffect, useRef } from 'react';
-import { PayPalScriptProvider, PayPalButtons, PayPalMessages } from '@paypal/react-paypal-js';
+import { useState, useEffect, useRef } from 'react';
+import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
 import {
   Sparkles,
   RefreshCw,
@@ -13,7 +13,8 @@ import {
   ShoppingBag,
   ShieldCheck,
   Check,
-  Trash2
+  Trash2,
+  Clock
 } from 'lucide-react';
 import { Navbar } from './components/layout/Navbar';
 import type { PlanData, Product } from './types/bundle.types';
@@ -21,10 +22,10 @@ import { API_URL, fetchClientConfig, requestBundlePlan } from './services/splitc
 
 const EXPLORE_IDEAS = [
   { label: '☕ Home Espresso Bar', goal: 'Craft Home Espresso & Matcha Bar Setup', budget: 160 },
-  { label: '⛺ 2-Person Camping Kit', goal: 'Ultralight 2-Person Weekend Camping Gear Setup', budget: 125 },
+  { label: '⛺ 2-Person Camping Kit', goal: 'Ultralight 2-Person Weekend Camping Gear Setup', budget: 140 },
   { label: '👶 Baby Nursery', goal: 'Modern Newborn Baby Nursery & Monitor Setup', budget: 180 },
   { label: '🏋️ Compact Home Gym', goal: 'Apartment Adjustable Dumbbell & Cardio Home Gym', budget: 150 },
-  { label: '💻 Home Office Desk', goal: 'Remote Software Engineer Ergonomic Desk Setup', budget: 140 },
+  { label: '💻 Home Office Desk', goal: 'Remote Software Engineer Ergonomic Desk Setup', budget: 145 },
   {
     label: '🎥 Pro Video Studio ($1,680+)',
     goal: '4K Cinema Camera & Podcast Studio Kit',
@@ -45,12 +46,75 @@ function computeLocalInstallments(totalCents: number): [number, number, number, 
   ];
 }
 
+function isDateSafeFromBillDay(dateObj: Date, billDay: number): boolean {
+  const dayOfMonth = dateObj.getDate();
+  const directDiff = Math.abs(dayOfMonth - billDay);
+  const minDiff = Math.min(directDiff, 30 - directDiff);
+  return minDiff > 2;
+}
+
+function computeBestDayToBuy(billDay: number): {
+  buyTodaySafe: boolean;
+  recommendedDateLabel: string;
+  daysToWait: number;
+  scheduleFromBestDay: { label: string; dateLabel: string }[];
+} {
+  const offsets = [0, 14, 28, 42];
+  const labels = ['Payment 1', 'Payment 2 (+14d)', 'Payment 3 (+28d)', 'Payment 4 (+42d)'];
+  const today = new Date();
+
+  for (let wait = 0; wait <= 14; wait++) {
+    const candidateStart = new Date(today);
+    candidateStart.setDate(today.getDate() + wait);
+
+    const allFourClear = offsets.every(offset => {
+      const pullDate = new Date(candidateStart);
+      pullDate.setDate(candidateStart.getDate() + offset);
+      return isDateSafeFromBillDay(pullDate, billDay);
+    });
+
+    if (allFourClear) {
+      const formatted = candidateStart.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric'
+      });
+      return {
+        buyTodaySafe: wait === 0,
+        recommendedDateLabel: wait === 0 ? `Today (${formatted})` : formatted,
+        daysToWait: wait,
+        scheduleFromBestDay: offsets.map((off, idx) => {
+          const d = new Date(candidateStart);
+          d.setDate(candidateStart.getDate() + off);
+          return {
+            label: labels[idx],
+            dateLabel: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+          };
+        })
+      };
+    }
+  }
+
+  return {
+    buyTodaySafe: true,
+    recommendedDateLabel: 'Today',
+    daysToWait: 0,
+    scheduleFromBestDay: []
+  };
+}
+
+function formatOrdinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
 export default function App() {
   const [paypalClientId, setPaypalClientId] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [goal, setGoal] = useState('Craft Home Espresso & Matcha Bar Setup');
   const [budget, setBudget] = useState(160);
+  const [budgetInput, setBudgetInput] = useState('160');
   const [rentDueDay, setRentDueDay] = useState<number>(1);
   const [customTradeOff, setCustomTradeOff] = useState('');
   const [plan, setPlan] = useState<PlanData | null>(null);
@@ -115,16 +179,18 @@ export default function App() {
 
   const loadScenario = async (selectedGoal: string, selectedBudget: number, tradeOffPrompt?: string) => {
     const reqId = ++requestCounterRef.current;
+    const cleanCap = Math.max(15, Math.min(2000, Math.round(Number(selectedBudget) || 160)));
     setLoading(true);
     setErrorBanner(null);
     setCheckoutComplete(null);
     setGoal(selectedGoal);
-    setBudget(selectedBudget);
+    setBudget(cleanCap);
+    setBudgetInput(String(cleanCap));
 
     try {
       const data = await requestBundlePlan({
         userGoal: selectedGoal,
-        biWeeklyBudget: selectedBudget,
+        biWeeklyBudget: cleanCap,
         tradeOffPrompt,
         rentDueDay
       });
@@ -149,6 +215,14 @@ export default function App() {
         setLoading(false);
       }
     }
+  };
+
+  const commitBudgetInput = (): number => {
+    const parsed = Number(budgetInput);
+    const clamped = isNaN(parsed) || parsed < 15 ? 15 : Math.min(2000, Math.round(parsed));
+    setBudget(clamped);
+    setBudgetInput(String(clamped));
+    return clamped;
   };
 
   const handleToggleItem = (clickedId: string) => {
@@ -233,12 +307,15 @@ export default function App() {
 
     if (activeItems.length === plan.items.length) {
       mode = 'FULL';
+      label = `All ${plan.items.length} Curated Items`;
       resolvedHash = plan.cartHash;
     } else if (activeItems.length === p1Ids.length && activeItems.every(i => p1Ids.includes(i.id))) {
       mode = 'PHASE_1';
+      label = 'Paycheck 1: Essentials (Buy Today)';
       resolvedHash = plan.phasedSplit.phase1.cartHash;
     } else if (activeItems.length === p2Ids.length && activeItems.every(i => p2Ids.includes(i.id))) {
       mode = 'PHASE_2';
+      label = 'Upgrades & Accessories';
       resolvedHash = plan.phasedSplit.phase2.cartHash;
     }
 
@@ -273,6 +350,8 @@ export default function App() {
     plan && activeCheckout.items.length > 0 && activeCheckout.items.length < plan.items.length
       ? Number((plan.payIn4.biWeeklyAmount - activeCheckout.biWeekly).toFixed(2))
       : 0;
+  const bestBuyTiming = computeBestDayToBuy(rentDueDay);
+  const isWithinCap = activeCheckout.biWeekly <= budget;
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 pb-12">
@@ -286,29 +365,32 @@ export default function App() {
                 <Sparkles className="w-3 h-3" /> Smart Bi-Weekly Cash-Flow Planner
               </span>
               <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight">
-                Shop Any Item or Project Without Colliding With Rent Day
+                Plan What to Buy and When, So Payments Never Collide With Your Bills
               </h1>
             </div>
             <div className="hidden md:flex items-center gap-2 text-xs text-slate-300 bg-white/5 px-3.5 py-2 rounded-xl border border-white/10">
               <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>Buy 1 Item, Custom Mix, or Split Across Paychecks</span>
+              <span>Essentials First • Best Purchase Date Solver</span>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end bg-white p-4 rounded-xl text-slate-900 shadow-sm">
             <div className="md:col-span-5">
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                What are you shopping for? (Single Item or Full Setup)
+                What are you shopping for? (Single Item or Project)
               </label>
               <div className="relative">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                 <input
                   type="text"
                   value={goal}
-                  placeholder="e.g., Espresso Machine, Sony Camera, Baby Crib..."
+                  placeholder="e.g., Espresso Machine, Sony Camera, Baby Nursery..."
                   onChange={e => setGoal(e.target.value)}
                   onKeyDown={e => {
-                    if (e.key === 'Enter' && !loading) loadScenario(goal, budget);
+                    if (e.key === 'Enter' && !loading) {
+                      const clean = commitBudgetInput();
+                      loadScenario(goal, clean);
+                    }
                   }}
                   className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm font-medium focus:outline-none focus:border-blue-600"
                 />
@@ -322,12 +404,24 @@ export default function App() {
               <div className="relative">
                 <span className="text-xs font-bold text-slate-400 absolute left-3 top-2.5">$</span>
                 <input
-                  type="number"
-                  min={15}
-                  max={2000}
-                  value={budget}
-                  onChange={e => setBudget(Math.max(15, Number(e.target.value) || 0))}
-                  className="w-full pl-7 pr-16 py-2 border border-slate-300 rounded-lg text-sm font-extrabold text-slate-900 focus:outline-none focus:border-blue-600"
+                  type="text"
+                  inputMode="numeric"
+                  value={budgetInput}
+                  onChange={e => {
+                    const raw = e.target.value.replace(/[^0-9]/g, '');
+                    setBudgetInput(raw);
+                    if (raw !== '' && Number(raw) >= 15) {
+                      setBudget(Math.min(2000, Number(raw)));
+                    }
+                  }}
+                  onBlur={() => commitBudgetInput()}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !loading) {
+                      const clean = commitBudgetInput();
+                      loadScenario(goal, clean);
+                    }
+                  }}
+                  className="w-full pl-7 pr-16 py-2 border border-slate-300 rounded-lg text-sm font-extrabold text-slate-900 focus:outline-none focus:border-blue-600 [appearance:textfield]"
                 />
                 <span className="text-[11px] font-semibold text-blue-600 absolute right-3 top-2.5">/ 2 wks</span>
               </div>
@@ -352,12 +446,15 @@ export default function App() {
 
             <div className="md:col-span-2">
               <button
-                onClick={() => loadScenario(goal, budget)}
+                onClick={() => {
+                  const clean = commitBudgetInput();
+                  loadScenario(goal, clean);
+                }}
                 disabled={loading}
                 className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg text-sm transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
               >
                 <Sparkles className="w-4 h-4" />
-                {loading ? 'Searching...' : 'Search'}
+                {loading ? 'Planning...' : 'Plan Cart'}
               </button>
             </div>
           </div>
@@ -398,13 +495,13 @@ export default function App() {
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
                         {activeCheckout.items.length === 1
-                          ? 'Single Product Mode'
+                          ? 'Single Item Selected'
                           : activeCheckout.items.length === 0
                           ? 'Bag Empty — Select Any Item Below'
-                          : 'Interactive Shopping Options'}
+                          : 'Interactive Shopping Checklist'}
                       </span>
                       <span className="text-[11px] font-bold text-emerald-700">
-                        ✓ Click any item card to check or uncheck
+                        ✓ Click any card to check or uncheck
                       </span>
                     </div>
                     <h2 className="text-xl font-extrabold text-slate-900">{plan.bundleName}</h2>
@@ -418,15 +515,24 @@ export default function App() {
                     <span className="text-[11px] font-bold uppercase text-slate-400 block">Selected Bag Total</span>
                     <span className="text-2xl font-black text-slate-900">${activeCheckout.totalPrice.toFixed(2)}</span>
                     {activeCheckout.items.length > 0 ? (
-                      <p className="text-xs font-bold text-emerald-600">
-                        4x ${activeCheckout.biWeekly.toFixed(2)} / 2 wks
-                      </p>
+                      <>
+                        <p className="text-xs font-bold text-emerald-600">
+                          4x ${activeCheckout.biWeekly.toFixed(2)} / 2 wks
+                        </p>
+                        <p
+                          className={`text-[11px] font-bold mt-0.5 ${
+                            isWithinCap ? 'text-slate-600' : 'text-amber-700'
+                          }`}
+                        >
+                          ${activeCheckout.biWeekly.toFixed(2)} of your ${budget}/2wks cap used
+                        </p>
+                      </>
                     ) : (
-                      <p className="text-xs font-semibold text-slate-400">$0.00 due today</p>
+                      <p className="text-xs font-semibold text-slate-400">$0.00 of ${budget}/2wks cap used</p>
                     )}
                     {biWeeklySavedVsFull > 0 && (
                       <span className="inline-block mt-1 text-[10px] font-extrabold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-                        Lowering bi-weekly payment by -${biWeeklySavedVsFull.toFixed(2)}/2wks
+                        Lowering bi-weekly payment by ${biWeeklySavedVsFull.toFixed(2)}/2wks
                       </span>
                     )}
                   </div>
@@ -453,7 +559,7 @@ export default function App() {
                         : 'text-slate-700 hover:bg-white/60'
                     }`}
                   >
-                    Paycheck 1 Essentials (${plan.phasedSplit.phase1.biWeeklyAmount.toFixed(2)}/2wks)
+                    Essentials First (${plan.phasedSplit.phase1.biWeeklyAmount.toFixed(2)}/2wks)
                   </button>
                   <button
                     onClick={() => selectPresetGroup('PHASE_2')}
@@ -463,7 +569,7 @@ export default function App() {
                         : 'text-slate-700 hover:bg-white/60'
                     }`}
                   >
-                    Accessories Only (${plan.phasedSplit.phase2.biWeeklyAmount.toFixed(2)}/2wks)
+                    Extras Only (${plan.phasedSplit.phase2.biWeeklyAmount.toFixed(2)}/2wks)
                   </button>
                   {activeCheckout.items.length > 0 && (
                     <button
@@ -480,7 +586,7 @@ export default function App() {
               {loading ? (
                 <div className="w-full py-16 flex flex-col items-center justify-center bg-slate-50 rounded-xl border border-slate-200 text-sm text-slate-600 gap-3">
                   <RefreshCw className="w-7 h-7 animate-spin text-blue-600" />
-                  <span className="font-bold text-slate-800">Finding real retail products & calculating installments...</span>
+                  <span className="font-bold text-slate-800">Building checklist & calculating payment dates...</span>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -493,15 +599,10 @@ export default function App() {
                     let statusBadgeClass = 'bg-slate-200 text-slate-600';
 
                     if (isIncludedInActiveCart) {
-                      statusBadgeText =
-                        activeCheckout.items.length === 1
-                          ? 'Buying Today • Single Item'
-                          : 'Buying Today • In Your Bag';
+                      statusBadgeText = isPhase1 ? 'Essential • In Your Bag' : 'Extra • In Your Bag';
                       statusBadgeClass = 'bg-emerald-100 text-emerald-800';
                     } else if (activeCheckout.items.length > 0) {
-                      statusBadgeText = isPhase1
-                        ? 'Unchecked • Core Option'
-                        : 'Defer to Next Paycheck (+28d)';
+                      statusBadgeText = isPhase1 ? 'Essential • Unchecked' : 'Can Wait • Next Paycheck (+28d)';
                       statusBadgeClass = 'bg-amber-100 text-amber-800';
                     }
 
@@ -540,7 +641,7 @@ export default function App() {
                           </div>
 
                           <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 uppercase tracking-wide">
-                            <span>{item.brand || 'Verified Retail'}</span>
+                            <span>{item.brand || 'Demo Catalog'}</span>
                             <span>•</span>
                             <span>{item.category}</span>
                           </div>
@@ -554,7 +655,7 @@ export default function App() {
 
                         <div className="mt-4 pt-3 border-t border-slate-100 flex items-baseline justify-between">
                           <div>
-                            <span className="text-xs text-slate-400 font-medium">Retail: </span>
+                            <span className="text-xs text-slate-400 font-medium">Est. </span>
                             <span className="text-sm font-bold text-slate-700">${item.price.toFixed(2)}</span>
                           </div>
                           <div className="text-right">
@@ -591,7 +692,7 @@ export default function App() {
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      placeholder="Ask AI to swap any item, find a single product, or adjust budget (e.g., 'Cheaper grinder', 'Under $400')..."
+                      placeholder="Ask AI to swap any item or adjust tier (e.g., 'Cheaper grinder', 'Include a crib mattress')..."
                       value={customTradeOff}
                       onChange={e => setCustomTradeOff(e.target.value)}
                       onKeyDown={e => {
@@ -619,6 +720,7 @@ export default function App() {
               )}
             </div>
 
+            {/* PAYMENT SCHEDULE & BEST DAY TO BUY SOLVER */}
             {plan && activeCheckout.items.length > 0 && (
               <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-5">
                 <div className="flex flex-wrap justify-between items-center gap-2">
@@ -628,19 +730,50 @@ export default function App() {
                       Your 4-Payment Timeline ({activeCheckout.label})
                     </h3>
                     <p className="text-xs text-slate-500">
-                      Checked against your major bill / rent due date ({rentDueDay}th of the month) to prevent overdrafts.
+                      Checked against your {formatOrdinal(rentDueDay)} of the month bill / rent due date.
                     </p>
                   </div>
 
-                  {activeCheckout.items.length >= 2 && (
+                  {activeCheckout.items.length >= 2 && activeCheckout.mode !== 'PHASE_1' && (
                     <button
                       onClick={() => selectPresetGroup('PHASE_1')}
                       className="text-xs font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
                     >
                       <Split className="w-3.5 h-3.5" />
-                      Split Cart Across 2 Paychecks
+                      Buy Essentials First (${plan.phasedSplit.phase1.biWeeklyAmount.toFixed(2)}/2wks)
                     </button>
                   )}
+                </div>
+
+                {/* BEST DAY TO BUY RECOMMENDATION BANNER */}
+                <div
+                  className={`p-3.5 rounded-xl border flex items-start gap-2.5 text-xs ${
+                    bestBuyTiming.buyTodaySafe
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                      : 'bg-amber-50 border-amber-300 text-amber-950'
+                  }`}
+                >
+                  <Clock
+                    className={`w-4 h-4 shrink-0 mt-0.5 ${
+                      bestBuyTiming.buyTodaySafe ? 'text-emerald-600' : 'text-amber-700'
+                    }`}
+                  />
+                  <div>
+                    {bestBuyTiming.buyTodaySafe ? (
+                      <p className="font-bold">
+                        Best day to buy: <span className="underline">{bestBuyTiming.recommendedDateLabel}</span> — none
+                        of the 4 payments (Day 0, +14d, +28d, +42d) land within 2 days of the{' '}
+                        {formatOrdinal(rentDueDay)}.
+                      </p>
+                    ) : (
+                      <p className="font-bold">
+                        Best day to buy: Buy on{' '}
+                        <span className="underline">{bestBuyTiming.recommendedDateLabel}</span> or later (wait{' '}
+                        {bestBuyTiming.daysToWait} {bestBuyTiming.daysToWait === 1 ? 'day' : 'days'}) and all 4
+                        payments will clear your {formatOrdinal(rentDueDay)} bill day.
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -661,11 +794,11 @@ export default function App() {
                         <span className="text-xs font-semibold text-slate-600 block">{slot.date}</span>
                         {collision.safe ? (
                           <span className="text-[10px] text-emerald-700 font-bold mt-1.5 block">
-                            ✓ Safe from bill day ({rentDueDay}th)
+                            ✓ Clears bill day ({formatOrdinal(rentDueDay)})
                           </span>
                         ) : (
                           <span className="text-[10px] text-amber-900 font-extrabold mt-1.5 block">
-                            ⚠ Near Rent ({rentDueDay}th) • Wait {collision.shiftDays}d
+                            ⚠ Near {formatOrdinal(rentDueDay)} bill • Buy {bestBuyTiming.recommendedDateLabel}
                           </span>
                         )}
                       </div>
@@ -710,7 +843,7 @@ export default function App() {
                     {activeCheckout.items.map(item => (
                       <li key={item.id} className="flex justify-between items-center gap-2">
                         <span className="font-medium truncate">{item.name}</span>
-                        <span className="font-bold text-slate-900 shrink-0">${item.price.toFixed(2)}</span>
+                        <span className="font-bold text-slate-900 shrink-0">Est. ${item.price.toFixed(2)}</span>
                       </li>
                     ))}
                   </ul>
@@ -719,25 +852,18 @@ export default function App() {
                     <PayPalScriptProvider
                       options={{
                         clientId: paypalClientId,
-                        components: 'buttons,messages',
+                        components: 'buttons',
                         enableFunding: 'paylater',
                         currency: 'USD'
                       }}
                     >
-                      <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-100">
-                        <PayPalMessages
-                          amount={activeCheckout.totalPrice}
-                          style={{ layout: 'text', logo: { type: 'primary' } }}
-                        />
-                      </div>
-
                       {checkoutComplete ? (
                         <div className="p-4 bg-emerald-50 border-2 border-emerald-300 rounded-xl text-emerald-950 text-center space-y-2">
                           <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
                           <h4 className="font-extrabold text-sm text-emerald-900">Order Confirmed!</h4>
                           <p className="text-xs text-slate-600">
                             Paid <strong className="text-slate-900">${activeCheckout.totalPrice.toFixed(2)}</strong> via
-                            PayPal Sandbox.
+                            PayPal Sandbox ({checkoutComplete.status || 'COMPLETED'}).
                           </p>
                           <p className="text-[11px] font-mono text-slate-700 bg-white py-1 px-2.5 rounded border border-emerald-200 inline-block">
                             Capture ID: {checkoutComplete.captureId || checkoutComplete.id}

@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import { registerProductsInQuoteStore } from '../repositories/quote-registry.repository';
 import { computeInstallmentsInDollars, verifyAndSignCart } from './cart-crypto.service';

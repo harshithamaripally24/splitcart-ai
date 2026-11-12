@@ -1,8 +1,37 @@
-﻿import { ValidationError } from '../errors/http-errors';
-import { registerProductsInQuoteStore } from '../repositories/quote-registry.repository';
-import { BundlePlanResponse } from '../types/commerce.types';
-import { computeInstallmentsInDollars, verifyAndSignCart } from './cart-crypto.service';
 import { discoverProductsWithGemini } from './gemini-discovery.service';
+import { computeInstallmentsInDollars, signSingleItemQuote, verifyAndSignCart } from './cart-crypto.service';
+import { registerProductsInQuoteStore } from '../repositories/quote-registry.repository';
+import { ValidationError } from '../errors/http-errors';
+import { BundlePlanResponse, Product } from '../types/commerce.types';
+
+function isDateSafeFromBillDay(dateObj: Date, rentDueDay: number): boolean {
+  const dayOfMonth = dateObj.getDate();
+  const directDiff = Math.abs(dayOfMonth - rentDueDay);
+  const minDiff = Math.min(directDiff, 30 - directDiff);
+  return minDiff > 2;
+}
+
+function buildFourInstallmentSchedule(
+  installments: [number, number, number, number],
+  rentDueDay: number
+) {
+  const labels = ['Payment 1 (Today)', 'Payment 2 (+14d)', 'Payment 3 (+28d)', 'Payment 4 (+42d)'];
+  const dayOffsets = [0, 14, 28, 42];
+  const now = new Date();
+
+  return dayOffsets.map((offset, idx) => {
+    const d = new Date(now);
+    d.setDate(now.getDate() + offset);
+    return {
+      installment: idx + 1,
+      label: labels[idx],
+      date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      isoDate: d.toISOString(),
+      amount: installments[idx],
+      rentBufferSafe: isDateSafeFromBillDay(d, rentDueDay)
+    };
+  });
+}
 
 export async function buildCashFlowBundlePlan(
   userGoal: string,
@@ -10,131 +39,123 @@ export async function buildCashFlowBundlePlan(
   tradeOffPrompt?: string,
   rentDueDay: number = 1
 ): Promise<BundlePlanResponse> {
-  const cleanGoal = String(userGoal || 'Craft Home Espresso & Matcha Bar Setup').trim().slice(0, 140);
-  const cleanBudget = Number(biWeeklyBudget);
-
-  if (!Number.isFinite(cleanBudget) || cleanBudget < 10 || cleanBudget > 2500) {
-    throw new ValidationError('INVALID_BUDGET: Bi-weekly budget cap must be between $10 and $2,500.');
+  const numericBudget = Number(biWeeklyBudget);
+  if (isNaN(numericBudget) || numericBudget < 15 || numericBudget > 10000) {
+    throw new ValidationError('INVALID_BUDGET: biWeeklyBudget must be between $15 and $10,000.');
   }
 
-  const cleanTradeOff = tradeOffPrompt ? String(tradeOffPrompt).trim().slice(0, 240) : '';
-  const cleanRentDay = Number.isFinite(rentDueDay) && rentDueDay >= 1 && rentDueDay <= 31 ? Math.round(rentDueDay) : 1;
-  const targetTotal = Math.round(cleanBudget * 4);
+  const cleanBudget = Math.round(numericBudget);
+  const cleanRentDay = Math.max(1, Math.min(31, Number(rentDueDay) || 1));
+  const targetTotal = cleanBudget * 4;
 
-  let { bundleName, rationale, rawProducts, negotiationChips, sourceMode } = await discoverProductsWithGemini(
-    cleanGoal,
+  const discovered = await discoverProductsWithGemini(
+    userGoal || 'Home Espresso Bar',
     cleanBudget,
     targetTotal,
-    cleanTradeOff
+    tradeOffPrompt || ''
   );
 
-  // Deterministic Budget Enforcement
-  const isOver1500Test = cleanTradeOff.toLowerCase().includes('1,500') || cleanTradeOff.toLowerCase().includes('1,700');
-  const rawTotal = rawProducts.reduce((sum, p) => sum + Number(p.price || 0), 0);
-  if (!isOver1500Test && rawTotal > targetTotal && rawTotal > 0) {
-    const scaleFactor = (targetTotal * 0.98) / rawTotal;
-    rawProducts = rawProducts.map(p => ({
-      ...p,
-      price: Math.max(10, Math.round(Number(p.price) * scaleFactor))
-    }));
-  }
-
-  const registeredProducts = registerProductsInQuoteStore(rawProducts);
-  const allSkuIds = registeredProducts.map(p => p.id);
-  const { items, total: totalPrice, totalCents, cartHash } = verifyAndSignCart(allSkuIds);
-
-  let phase1Items = items.filter(i => i.phase === 'PHASE_1_TODAY');
-  let phase2Items = items.filter(i => i.phase === 'PHASE_2_STAGGERED');
-
-  if (phase1Items.length === 0 || phase2Items.length === 0) {
-    const mid = Math.ceil(items.length / 2);
-    phase1Items = items.slice(0, mid).map(i => ({ ...i, phase: 'PHASE_1_TODAY' }));
-    phase2Items = items.slice(mid).map(i => ({ ...i, phase: 'PHASE_2_STAGGERED' }));
-  }
-
-  const p1Verified = verifyAndSignCart(phase1Items.map(i => i.id));
-  const p2Verified = verifyAndSignCart(phase2Items.map(i => i.id));
-  const p1Installments = computeInstallmentsInDollars(p1Verified.totalCents);
-  const p2Installments = computeInstallmentsInDollars(p2Verified.totalCents);
-
-  const payIn4Eligible = totalCents >= 3000 && totalCents <= 150000;
-  const installments = computeInstallmentsInDollars(totalCents);
-  const biWeeklyAmount = payIn4Eligible ? installments[0] : Number((totalPrice / 4).toFixed(2));
-  const payMonthlyEligible = totalCents >= 19900 && totalCents <= 1000000;
-
-  const today = new Date();
-  const schedule = [0, 14, 28, 42].map((days, idx) => {
-    const d = new Date(today.getTime() + days * 86400000);
-    const dayOfMonth = d.getDate();
-    const directDiff = Math.abs(dayOfMonth - cleanRentDay);
-    const minDiff = Math.min(directDiff, 30 - directDiff);
+  const normalizedProducts: Product[] = discovered.rawProducts.map((item: Product, idx: number) => {
+    const cleanPrice = Number(Math.max(5, Number(item.price)).toFixed(2));
+    const cleanId = String(item.id || 'sku-' + (idx + 1)).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48);
     return {
-      installment: idx + 1,
-      date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      isoDate: d.toISOString().split('T')[0],
-      amount: installments[idx],
-      label: idx === 0 ? 'Payment 1 (Today)' : `Payment ${idx + 1} (+${days}d)`,
-      rentBufferSafe: minDiff > 2
+      ...item,
+      id: cleanId,
+      price: cleanPrice,
+      tier: idx < 2 ? 'essential' : 'recommended',
+      phase: idx < 2 ? 'PHASE_1_TODAY' : 'PHASE_2_STAGGERED',
+      itemSig: signSingleItemQuote(cleanId, cleanPrice)
     };
   });
 
-  const peakDrop = Number((biWeeklyAmount - p1Installments[0]).toFixed(2));
-  const shouldRecommendSplit = !payIn4Eligible || biWeeklyAmount > cleanBudget;
+  const registeredItems = registerProductsInQuoteStore(normalizedProducts);
+  const signedItems: Product[] = registeredItems.map((item: Product) => ({
+    ...item,
+    itemSig: signSingleItemQuote(item.id, item.price)
+  }));
+
+  const allSkuIds = signedItems.map((i: Product) => i.id);
+  const fullVerified = verifyAndSignCart(allSkuIds);
+  const totalPrice = fullVerified.total;
+  const fullInstallments = computeInstallmentsInDollars(fullVerified.totalCents);
+  const biWeeklyAmount = fullInstallments[0];
+
+  const payIn4Eligible = fullVerified.totalCents >= 3000 && fullVerified.totalCents <= 150000;
+
+  const p1Raw = signedItems.slice(0, 2);
+  const p2Raw = signedItems.slice(2);
+
+  const p1Verified = verifyAndSignCart(p1Raw.map((i: Product) => i.id));
+  const p1Installments = computeInstallmentsInDollars(p1Verified.totalCents);
+
+  const p2Verified =
+    p2Raw.length > 0
+      ? verifyAndSignCart(p2Raw.map((i: Product) => i.id))
+      : { items: [] as Product[], total: 0, totalCents: 0, cartHash: '' };
+  const p2Installments =
+    p2Raw.length > 0
+      ? computeInstallmentsInDollars(p2Verified.totalCents)
+      : ([0, 0, 0, 0] as [number, number, number, number]);
+
+  const peakBiWeeklyDrop = Number(Math.max(0, biWeeklyAmount - p1Installments[0]).toFixed(2));
+  const exceedsComfortCap = biWeeklyAmount > cleanBudget;
 
   return {
-    bundleName,
-    rationale,
-    items,
+    bundleName: discovered.bundleName,
+    rationale: discovered.rationale,
+    items: signedItems,
     totalPrice,
-    cartHash,
+    cartHash: fullVerified.cartHash,
     payIn4: {
       eligible: payIn4Eligible,
       biWeeklyAmount,
-      installments,
-      schedule,
+      installments: fullInstallments,
+      schedule: buildFourInstallmentSchedule(fullInstallments, cleanRentDay),
       statusMessage: payIn4Eligible
-        ? `Eligible for 4 interest-free payments of $${biWeeklyAmount.toFixed(2)} (0% APR)`
-        : `Full cart ($${totalPrice.toFixed(2)}) exceeds PayPal Pay in 4's $1,500 single-order cap.`
+        ? 'Eligible for 4 bi-weekly payments of $' + biWeeklyAmount.toFixed(2)
+        : 'Full cart ($' + totalPrice.toFixed(2) + ') exceeds the $1,500 single-order installment cap.'
     },
     payMonthly: {
-      eligible: payMonthlyEligible,
+      eligible: totalPrice >= 199,
       sixMonthAmount: Number((totalPrice / 6).toFixed(2)),
       twelveMonthAmount: Number((totalPrice / 12).toFixed(2))
     },
     phasedSplit: {
-      recommended: shouldRecommendSplit,
+      recommended: !payIn4Eligible || exceedsComfortCap,
       reason: !payIn4Eligible
-        ? `Full bundle ($${totalPrice.toFixed(2)}) exceeds PayPal Pay in 4's $1,500 limit. Buying Phase 1 Essentials today ($${p1Verified.total.toFixed(2)}) and Phase 2 Upgrades next month ($${p2Verified.total.toFixed(2)}) unlocks 0% APR Pay in 4 on both carts.`
-        : `Buying Phase 1 Essentials today and waiting 28 days for Phase 2 Upgrades lowers your immediate bi-weekly payment from $${biWeeklyAmount.toFixed(2)} down to $${p1Installments[0].toFixed(2)}.`,
-      peakBiWeeklyDrop: peakDrop,
+        ? 'Full bundle ($' + totalPrice.toFixed(2) + ') exceeds the $1,500 single-order limit. Buying Phase 1 Essentials today ($' + p1Verified.total.toFixed(2) + ') and Phase 2 Extras in 28 days ($' + p2Verified.total.toFixed(2) + ') keeps both orders eligible.'
+        : exceedsComfortCap
+        ? 'Full bundle ($' + biWeeklyAmount.toFixed(2) + '/2wks) is above your $' + cleanBudget + '/2wks cap. Buying Phase 1 Essentials first lowers your payment to $' + p1Installments[0].toFixed(2) + '/2wks.'
+        : 'Buying Phase 1 Essentials today lowers your immediate bi-weekly payment from $' + biWeeklyAmount.toFixed(2) + ' to $' + p1Installments[0].toFixed(2) + '/2wks.',
+      peakBiWeeklyDrop,
       phase1: {
         phaseId: 'PHASE_1_TODAY',
         label: 'Phase 1: Day-1 Essentials (Buy Today)',
-        timingBadge: 'Starts Today • Days 0, 14, 28, 42',
+        timingBadge: 'Buy Today',
         startOffsetDays: 0,
+        skuIds: p1Verified.items.map((i: Product) => i.id),
         items: p1Verified.items,
-        skuIds: p1Verified.items.map(i => i.id),
         totalPrice: p1Verified.total,
-        cartHash: p1Verified.cartHash,
-        payIn4Eligible: p1Verified.totalCents >= 3000 && p1Verified.totalCents <= 150000,
         biWeeklyAmount: p1Installments[0],
-        installments: p1Installments
+        installments: p1Installments,
+        cartHash: p1Verified.cartHash,
+        payIn4Eligible: p1Verified.totalCents >= 3000 && p1Verified.totalCents <= 150000
       },
       phase2: {
         phaseId: 'PHASE_2_STAGGERED',
-        label: 'Phase 2: Upgrades & Accessories (+28 Days)',
-        timingBadge: 'Next Paycheck Cycle • Days 28, 42, 56, 70',
+        label: 'Phase 2: Extras (Wait +28 Days)',
+        timingBadge: 'Wait +28 Days',
         startOffsetDays: 28,
+        skuIds: p2Verified.items.map((i: Product) => i.id),
         items: p2Verified.items,
-        skuIds: p2Verified.items.map(i => i.id),
         totalPrice: p2Verified.total,
-        cartHash: p2Verified.cartHash,
-        payIn4Eligible: p2Verified.totalCents >= 3000 && p2Verified.totalCents <= 150000,
         biWeeklyAmount: p2Installments[0],
-        installments: p2Installments
+        installments: p2Installments,
+        cartHash: p2Verified.cartHash,
+        payIn4Eligible: p2Verified.totalCents >= 3000 && p2Verified.totalCents <= 150000
       }
     },
-    negotiationChips,
-    sourceMode
+    negotiationChips: discovered.negotiationChips,
+    sourceMode: discovered.sourceMode
   };
 }

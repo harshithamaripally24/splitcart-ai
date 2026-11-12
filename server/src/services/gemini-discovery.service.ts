@@ -1,4 +1,4 @@
-﻿import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 import { ENV } from '../config/env.config';
 import { Product } from '../types/commerce.types';
 
@@ -134,22 +134,22 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         description: 'GREENGUARD Gold certified sustainable pine crib with toddler bed conversion kit'
       },
       {
-        name: 'Nanit Pro Smart Baby Monitor & Wall Mount',
-        brand: 'Nanit',
-        category: 'Safety Tech',
-        weight: 0.30,
-        tier: 'essential',
-        phase: 'PHASE_1_TODAY',
-        description: '1080p HD overhead camera with sensor-free breathing motion and sleep analytics'
-      },
-      {
         name: 'Newton Baby Breathable Wovenaire Crib Mattress',
         brand: 'Newton Baby',
         category: 'Sleep Safety',
-        weight: 0.16,
+        weight: 0.28,
+        tier: 'essential',
+        phase: 'PHASE_1_TODAY',
+        description: '100% washable, hypoallergenic Dual-Stage air-core mattress for infant and toddler'
+      },
+      {
+        name: 'Nanit Pro Smart Baby Monitor & Wall Mount',
+        brand: 'Nanit',
+        category: 'Safety Tech',
+        weight: 0.18,
         tier: 'recommended',
         phase: 'PHASE_2_STAGGERED',
-        description: '100% washable, hypoallergenic Dual-Stage air-core mattress for infant and toddler'
+        description: '1080p HD overhead camera with sensor-free breathing motion and sleep analytics'
       },
       {
         name: 'Hatch Rest+ 2nd Gen Smart Sound Machine',
@@ -307,8 +307,8 @@ export function buildDynamicFallbackProducts(
     .filter(w => w.length >= 2);
   const fullLower = `${cleanGoal} ${tradeOffPrompt || ''}`.toLowerCase();
 
-  const isOver1500 = fullLower.includes('1,500') || fullLower.includes('1,700') || fullLower.includes('cinema');
-  let effectiveTotal = isOver1500 ? 1680 : Math.max(120, Math.min(2400, targetTotal));
+  const isOver1500 = fullLower.includes('cinema') || fullLower.includes('4k') || fullLower.includes('studio');
+  let effectiveTotal = isOver1500 ? 1680 : 540;
 
   if (fullLower.includes('15%') || fullLower.includes('cheaper') || fullLower.includes('reduce')) {
     effectiveTotal = Math.round(effectiveTotal * 0.85);
@@ -519,7 +519,7 @@ Custom Request: "${cleanTradeOff || 'Recommend the best real-world retail items'
 
 Instructions:
 1. Recommend 4 specific, real-world retail products with authentic brand names and specific model names that match "${cleanGoal}". If "${cleanGoal}" is a specific product or brand (like "Black Diamond" or "Big Agnes Copper Spur"), make that exact product Item #1 and pair it with 3 matching companion items.
-2. Keep the sum of the 4 prices close to $${targetTotal.toFixed(2)}.
+2. Use realistic MSRP price estimates for each product; do not artificially inflate prices just to fill the budget cap.
 3. Mark the 2 most important items as phase "PHASE_1_TODAY" (Buy Today) and the 2 secondary/accessory items as "PHASE_2_STAGGERED" (Next Paycheck +28d).
 4. Provide a concise shopper rationale and 2 helpful price/model swap chips.`;
 

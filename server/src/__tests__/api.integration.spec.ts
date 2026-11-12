@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { app } from '../app';
@@ -32,6 +32,16 @@ test('api.integration: Full Express HTTP lifecycle (/api/config, /api/agent/plan
     assert.ok(plan.cartHash);
     assert.ok(plan.phasedSplit?.phase1?.cartHash);
     assert.notEqual(plan.cartHash, plan.phasedSplit.phase1.cartHash);
+
+    const forgedRes = await fetch(`${baseUrl}/api/agent/sign-selection`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        skuIds: ['forged-bambino'],
+        fallbackItems: [{ id: 'forged-bambino', name: 'Forged Bambino', price: 5 }]
+      })
+    });
+    assert.equal(forgedRes.status, 400);
 
     const tamperRes = await fetch(`${baseUrl}/api/paypal/create-order`, {
       method: 'POST',

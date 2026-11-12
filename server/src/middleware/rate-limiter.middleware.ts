@@ -1,4 +1,4 @@
-﻿import { Request, Response, NextFunction } from 'express';
+import { Request, Response, NextFunction } from 'express';
 
 const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
 

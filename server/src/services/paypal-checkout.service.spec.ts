@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import { capturePayPalOrder } from './paypal-checkout.service';
 import { ValidationError } from '../errors/http-errors';

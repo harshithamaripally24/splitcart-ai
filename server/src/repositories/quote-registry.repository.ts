@@ -1,4 +1,4 @@
-﻿import { Product } from '../types/commerce.types';
+import { Product } from '../types/commerce.types';
 
 const DYNAMIC_SKU_REGISTRY = new Map<string, Product>();
 

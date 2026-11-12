@@ -1,4 +1,4 @@
-﻿# SplitCart AI — Universal E-Commerce Product Discovery & Paycheck-Aligned Cash-Flow Planner
+# SplitCart AI — Universal E-Commerce Product Discovery & Paycheck-Aligned Cash-Flow Planner
 
 > **PayPal AI Hackathon 2026 Submission**  
 > SplitCart AI solves cash-flow fragmentation, BNPL loan stacking, and rent-date overdraft collisions for 0% APR PayPal Pay in 4.
@@ -40,3 +40,9 @@ node --test "dist/**/*.spec.js"
 
 
 *Disclaimer: This is a personal project. The views, code and opinions expressed here are my own and do not represent those of my current or past employers.*
+
+## Current Prototype Scope & Limitations
+- **Who This Is For:** Built as a consumer pre-checkout cash-flow planner ("Plan what to buy and when, so the payments never collide with your bills"), architected to evolve into an embeddable merchant checkout widget.
+- **Role of Gemini vs. Deterministic Code:** Gemini translates plain-language goals into a prioritized checklist of Essentials first and Extras second; deterministic TypeScript code performs all cent-exact installment math, bill-day collision checks, and HMAC-SHA256 signing so the AI never touches payment math.
+- **Illustrative Demo Pricing:** Product prices are illustrative demo estimates (`Est. $XX.XX`), not live store feeds. Because a PayPal order goes to one merchant, production deployment pairs one checkout order per store.
+- **PayPal Sandbox Only:** Checkout runs in the US PayPal Sandbox (`USD`, Pay in 4 eligible from `$30.00` to `$1,500.00`).
