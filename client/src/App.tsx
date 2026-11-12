@@ -108,7 +108,7 @@ export default function App() {
         }
       }
     } catch {
-      // Silent background sync; order creation re-verifies
+      // Silent background sync
     }
     return '';
   };
@@ -285,7 +285,6 @@ export default function App() {
       <Navbar />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
-        {/* PAYMENT-AGNOSTIC CONSUMER HERO & BUDGET PLANNER BAR */}
         <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white p-6 rounded-2xl shadow-lg space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -397,7 +396,6 @@ export default function App() {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* LEFT 2 COLUMNS: Consumer Product Cards & Paycheck Schedule */}
           <div className="lg:col-span-2 space-y-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-5">
               {plan && (
@@ -441,7 +439,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* QUICK SELECTION BAR (INCLUDES CLEAR BAG) */}
               {plan && (
                 <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-100 p-1.5 rounded-xl">
                   <button
@@ -486,7 +483,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* INTERACTIVE PRODUCT CARDS (DYNAMIC BADGES THAT MAKE SENSE) */}
               {loading ? (
                 <div className="w-full py-16 flex flex-col items-center justify-center bg-slate-50 rounded-xl border border-slate-200 text-sm text-slate-600 gap-3">
                   <RefreshCw className="w-7 h-7 animate-spin text-blue-600" />
@@ -499,7 +495,6 @@ export default function App() {
                     const isIncludedInActiveCart = activeSkuSet.has(item.id);
                     const itemBiWeekly = (item.price / 4).toFixed(2);
 
-                    // Dynamic badge text so selected items NEVER say "Wait +28d"
                     let statusBadgeText = 'Not Selected';
                     let statusBadgeClass = 'bg-slate-200 text-slate-600';
 
@@ -630,7 +625,6 @@ export default function App() {
               )}
             </div>
 
-            {/* PAYMENT SCHEDULE & RENT-DAY COLLISION GUARD (ONLY SHOWN WHEN >= 1 ITEM SELECTED) */}
             {plan && activeCheckout.items.length > 0 && (
               <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-5">
                 <div className="flex flex-wrap justify-between items-center gap-2">
@@ -644,7 +638,6 @@ export default function App() {
                     </p>
                   </div>
 
-                  {/* Only show 2-Phase split button if 2 or more items are selected */}
                   {activeCheckout.items.length >= 2 && (
                     <button
                       onClick={() => selectPresetGroup('PHASE_1')}
@@ -689,7 +682,6 @@ export default function App() {
             )}
           </div>
 
-          {/* RIGHT COLUMN: Sticky Consumer Checkout Bag (ONLY PLACE WITH PAYPAL BRANDING) */}
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 sticky top-20">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
