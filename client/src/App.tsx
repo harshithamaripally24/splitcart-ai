@@ -133,11 +133,9 @@ export default function App() {
 
       setPlan(data);
       if (!data.payIn4.eligible) {
-        setShowPhasedPlanner(true);
         setSelectedSkuIds(data.phasedSplit.phase1.skuIds);
         setCustomCartHash(data.phasedSplit.phase1.cartHash);
       } else {
-        setShowPhasedPlanner(Boolean(data.phasedSplit?.recommended));
         const allIds = data.items.map(i => i.id);
         setSelectedSkuIds(allIds);
         setCustomCartHash(data.cartHash);
