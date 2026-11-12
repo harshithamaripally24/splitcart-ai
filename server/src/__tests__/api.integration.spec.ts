@@ -37,8 +37,7 @@ test('api.integration: Full Express HTTP lifecycle (/api/config, /api/agent/plan
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        skuIds: ['forged-bambino'],
-        fallbackItems: [{ id: 'forged-bambino', name: 'Forged Bambino', price: 5 }]
+        skuIds: ['forged-bambino']
       })
     });
     assert.equal(forgedRes.status, 400);

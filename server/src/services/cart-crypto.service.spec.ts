@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { registerProductsInQuoteStore } from '../repositories/quote-registry.repository';
-import { computeInstallmentsInDollars, verifyAndSignCart } from './cart-crypto.service';
+import {
+  computeInstallmentsInDollars,
+  signSingleItemQuote,
+  verifyAndSignCart,
+  verifySingleItemQuote
+} from './cart-crypto.service';
 import { ValidationError } from '../errors/http-errors';
 
 test('cart-crypto.service: Cent-exact installment math sums to 100% without float drift', () => {
@@ -10,6 +15,16 @@ test('cart-crypto.service: Cent-exact installment math sums to 100% without floa
   assert.equal(sumCents, 55001);
   assert.equal(installments[0], 137.51);
   assert.equal(installments[1], 137.50);
+});
+
+test('cart-crypto.service: Verifies individual item quote signatures without drift or tampering', () => {
+  const sku = 'spec-sku-quote';
+  const price = 299.99;
+  const sig = signSingleItemQuote(sku, price);
+
+  assert.equal(verifySingleItemQuote(sku, price, sig), true);
+  assert.equal(verifySingleItemQuote(sku, price, sig + 'x'), false);
+  assert.equal(verifySingleItemQuote(sku, price), false);
 });
 
 test('cart-crypto.service: Rejects duplicate SKU IDs and unregistered SKUs', () => {

@@ -11,8 +11,6 @@
   },
   "dependencies": {
     "@paypal/react-paypal-js": "^10.6.1",
-    "ag-grid-community": "^32.3.3",
-    "ag-grid-react": "^32.3.3",
     "lucide-react": "^1.62.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
