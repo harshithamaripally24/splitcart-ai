@@ -32,13 +32,15 @@ const EXPLORE_IDEAS = [
   }
 ];
 
-interface CustomSelectionState {
-  skuIds: string[];
-  items: Product[];
-  totalPrice: number;
-  cartHash: string;
-  biWeeklyAmount: number;
-  installments: [number, number, number, number];
+function computeLocalInstallments(totalCents: number): [number, number, number, number] {
+  const baseCents = Math.floor(totalCents / 4);
+  const remainder = totalCents - baseCents * 4;
+  return [
+    Number(((baseCents + remainder) / 100).toFixed(2)),
+    Number((baseCents / 100).toFixed(2)),
+    Number((baseCents / 100).toFixed(2)),
+    Number((baseCents / 100).toFixed(2))
+  ];
 }
 
 export default function App() {
@@ -50,8 +52,8 @@ export default function App() {
   const [rentDueDay, setRentDueDay] = useState<number>(1);
   const [customTradeOff, setCustomTradeOff] = useState('');
   const [plan, setPlan] = useState<PlanData | null>(null);
-  const [checkoutMode, setCheckoutMode] = useState<'FULL' | 'PHASE_1' | 'PHASE_2' | 'CUSTOM'>('FULL');
-  const [customCart, setCustomCart] = useState<CustomSelectionState | null>(null);
+  const [selectedSkuIds, setSelectedSkuIds] = useState<string[]>([]);
+  const [customCartHash, setCustomCartHash] = useState<string>('');
   const [showPhasedPlanner, setShowPhasedPlanner] = useState(false);
   const [checkoutComplete, setCheckoutComplete] = useState<any>(null);
 
@@ -67,12 +69,50 @@ export default function App() {
     loadScenario('Craft Home Espresso & Matcha Bar Setup', 160);
   }, []);
 
+  const syncSelectionHashWithServer = async (
+    skuIds: string[],
+    currentPlan: PlanData,
+    selectedItems: Product[]
+  ): Promise<string> => {
+    if (skuIds.length === currentPlan.items.length) {
+      setCustomCartHash(currentPlan.cartHash);
+      return currentPlan.cartHash;
+    }
+    const p1Ids = currentPlan.phasedSplit.phase1.skuIds;
+    if (skuIds.length === p1Ids.length && skuIds.every(id => p1Ids.includes(id))) {
+      setCustomCartHash(currentPlan.phasedSplit.phase1.cartHash);
+      return currentPlan.phasedSplit.phase1.cartHash;
+    }
+    const p2Ids = currentPlan.phasedSplit.phase2.skuIds;
+    if (skuIds.length === p2Ids.length && skuIds.every(id => p2Ids.includes(id))) {
+      setCustomCartHash(currentPlan.phasedSplit.phase2.cartHash);
+      return currentPlan.phasedSplit.phase2.cartHash;
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/api/agent/sign-selection`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skuIds, fallbackItems: selectedItems })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.cartHash) {
+          setCustomCartHash(data.cartHash);
+          return data.cartHash;
+        }
+      }
+    } catch {
+      // Silent background sync; order creation re-verifies
+    }
+    return '';
+  };
+
   const loadScenario = async (selectedGoal: string, selectedBudget: number, tradeOffPrompt?: string) => {
     const reqId = ++requestCounterRef.current;
     setLoading(true);
     setErrorBanner(null);
     setCheckoutComplete(null);
-    setCustomCart(null);
     setGoal(selectedGoal);
     setBudget(selectedBudget);
 
@@ -87,12 +127,15 @@ export default function App() {
       if (reqId !== requestCounterRef.current) return;
 
       setPlan(data);
-      if (!data.payIn4.eligible || data.phasedSplit?.recommended) {
+      if (!data.payIn4.eligible) {
         setShowPhasedPlanner(true);
-        setCheckoutMode(!data.payIn4.eligible ? 'PHASE_1' : 'FULL');
+        setSelectedSkuIds(data.phasedSplit.phase1.skuIds);
+        setCustomCartHash(data.phasedSplit.phase1.cartHash);
       } else {
-        setShowPhasedPlanner(false);
-        setCheckoutMode('FULL');
+        setShowPhasedPlanner(Boolean(data.phasedSplit?.recommended));
+        const allIds = data.items.map(i => i.id);
+        setSelectedSkuIds(allIds);
+        setCustomCartHash(data.cartHash);
       }
     } catch (err: any) {
       if (reqId === requestCounterRef.current) {
@@ -105,119 +148,99 @@ export default function App() {
     }
   };
 
-  const getActiveCheckoutPayload = () => {
-    if (!plan) {
-      return {
-        skuIds: [],
-        cartHash: '',
-        totalPrice: 0,
-        biWeekly: 0,
-        installments: [0, 0, 0, 0] as [number, number, number, number],
-        label: 'Complete Bundle',
-        items: []
-      };
-    }
-    if (checkoutMode === 'CUSTOM' && customCart) {
-      return {
-        skuIds: customCart.skuIds,
-        cartHash: customCart.cartHash,
-        totalPrice: customCart.totalPrice,
-        biWeekly: customCart.biWeeklyAmount,
-        installments: customCart.installments,
-        label: `Custom Selection (${customCart.items.length} of ${plan.items.length} Items)`,
-        items: customCart.items
-      };
-    }
-    if (checkoutMode === 'PHASE_1') {
-      const p1 = plan.phasedSplit.phase1;
-      return {
-        skuIds: p1.skuIds,
-        cartHash: p1.cartHash,
-        totalPrice: p1.totalPrice,
-        biWeekly: p1.biWeeklyAmount,
-        installments: p1.installments,
-        label: 'Phase 1: Day-1 Essentials (Buy Today)',
-        items: p1.items
-      };
-    }
-    if (checkoutMode === 'PHASE_2') {
-      const p2 = plan.phasedSplit.phase2;
-      return {
-        skuIds: p2.skuIds,
-        cartHash: p2.cartHash,
-        totalPrice: p2.totalPrice,
-        biWeekly: p2.biWeeklyAmount,
-        installments: p2.installments,
-        label: 'Phase 2: Upgrades (+28 Days)',
-        items: p2.items
-      };
-    }
-    return {
-      skuIds: plan.items.map(i => i.id),
-      cartHash: plan.cartHash,
-      totalPrice: plan.totalPrice,
-      biWeekly: plan.payIn4.biWeeklyAmount,
-      installments: plan.payIn4.installments,
-      label: `All ${plan.items.length} Curated Items`,
-      items: plan.items
-    };
-  };
-
-  const toggleIndividualItem = async (clickedSkuId: string) => {
+  const handleToggleItem = (clickedId: string) => {
     if (!plan) return;
     setErrorBanner(null);
     setCheckoutComplete(null);
 
-    const currentPayload = getActiveCheckoutPayload();
-    const currentSet = new Set(currentPayload.skuIds);
+    const exists = selectedSkuIds.includes(clickedId);
+    if (exists && selectedSkuIds.length <= 1) {
+      setErrorBanner('At least 1 item must remain in your Checkout Bag.');
+      return;
+    }
 
-    if (currentSet.has(clickedSkuId)) {
-      if (currentSet.size <= 1) {
-        setErrorBanner('At least 1 item must remain in your checkout bag.');
-        return;
-      }
-      currentSet.delete(clickedSkuId);
+    const updatedSet = new Set(selectedSkuIds);
+    if (exists) {
+      updatedSet.delete(clickedId);
     } else {
-      currentSet.add(clickedSkuId);
+      updatedSet.add(clickedId);
     }
 
-    const nextSkuIds = plan.items.filter(i => currentSet.has(i.id)).map(i => i.id);
+    const activeItems = plan.items.filter(i => updatedSet.has(i.id));
+    const orderedIds = activeItems.map(i => i.id);
 
-    // Check if the new selection matches Full, Phase 1, or Phase 2 exactly
-    if (nextSkuIds.length === plan.items.length) {
-      setCheckoutMode('FULL');
-      setCustomCart(null);
-      return;
+    // Update UI checkboxes immediately (never block on network)
+    setSelectedSkuIds(orderedIds);
+    syncSelectionHashWithServer(orderedIds, plan, activeItems);
+  };
+
+  const selectPresetGroup = (mode: 'FULL' | 'PHASE_1' | 'PHASE_2') => {
+    if (!plan) return;
+    setErrorBanner(null);
+    setCheckoutComplete(null);
+    if (mode === 'FULL') {
+      const allIds = plan.items.map(i => i.id);
+      setSelectedSkuIds(allIds);
+      setCustomCartHash(plan.cartHash);
+    } else if (mode === 'PHASE_1') {
+      setSelectedSkuIds(plan.phasedSplit.phase1.skuIds);
+      setCustomCartHash(plan.phasedSplit.phase1.cartHash);
+    } else {
+      setSelectedSkuIds(plan.phasedSplit.phase2.skuIds);
+      setCustomCartHash(plan.phasedSplit.phase2.cartHash);
     }
+  };
+
+  const getActiveCheckoutPayload = () => {
+    if (!plan) {
+      return {
+        skuIds: [] as string[],
+        cartHash: '',
+        totalPrice: 0,
+        biWeekly: 0,
+        installments: [0, 0, 0, 0] as [number, number, number, number],
+        label: 'Selected Items',
+        mode: 'FULL' as 'FULL' | 'PHASE_1' | 'PHASE_2' | 'CUSTOM',
+        items: [] as Product[]
+      };
+    }
+
+    const activeItems = plan.items.filter(i => selectedSkuIds.includes(i.id));
+    const totalCents = activeItems.reduce((sum, i) => sum + Math.round(i.price * 100), 0);
+    const totalPrice = Number((totalCents / 100).toFixed(2));
+    const installments = computeLocalInstallments(totalCents);
+
     const p1Ids = plan.phasedSplit.phase1.skuIds;
-    if (nextSkuIds.length === p1Ids.length && nextSkuIds.every(id => p1Ids.includes(id))) {
-      setCheckoutMode('PHASE_1');
-      setCustomCart(null);
-      return;
-    }
     const p2Ids = plan.phasedSplit.phase2.skuIds;
-    if (nextSkuIds.length === p2Ids.length && nextSkuIds.every(id => p2Ids.includes(id))) {
-      setCheckoutMode('PHASE_2');
-      setCustomCart(null);
-      return;
+
+    let mode: 'FULL' | 'PHASE_1' | 'PHASE_2' | 'CUSTOM' = 'CUSTOM';
+    let label = `Custom Selection (${activeItems.length} of ${plan.items.length} Items)`;
+    let resolvedHash = customCartHash;
+
+    if (activeItems.length === plan.items.length) {
+      mode = 'FULL';
+      label = `All ${plan.items.length} Curated Items`;
+      resolvedHash = plan.cartHash;
+    } else if (activeItems.length === p1Ids.length && activeItems.every(i => p1Ids.includes(i.id))) {
+      mode = 'PHASE_1';
+      label = 'Phase 1: Day-1 Essentials (Buy Today)';
+      resolvedHash = plan.phasedSplit.phase1.cartHash;
+    } else if (activeItems.length === p2Ids.length && activeItems.every(i => p2Ids.includes(i.id))) {
+      mode = 'PHASE_2';
+      label = 'Phase 2: Upgrades (+28 Days)';
+      resolvedHash = plan.phasedSplit.phase2.cartHash;
     }
 
-    // Otherwise, sign the custom mix-and-match selection with the backend
-    try {
-      const res = await fetch(`${API_URL}/api/agent/sign-selection`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ skuIds: nextSkuIds })
-      });
-      const signed = await res.json();
-      if (!res.ok || signed.error) {
-        throw new Error(signed.error || 'Could not sign custom selection.');
-      }
-      setCustomCart(signed);
-      setCheckoutMode('CUSTOM');
-    } catch (err: any) {
-      setErrorBanner(err.message || 'Failed to update custom item selection.');
-    }
+    return {
+      skuIds: activeItems.map(i => i.id),
+      cartHash: resolvedHash,
+      totalPrice,
+      biWeekly: installments[0],
+      installments,
+      label,
+      mode,
+      items: activeItems
+    };
   };
 
   const checkRentCollision = (isoOrDateStr: string) => {
@@ -241,12 +264,12 @@ export default function App() {
       <Navbar />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
-        {/* VIBRANT HERO & BUDGET PLANNER BAR */}
+        {/* PAYMENT-AGNOSTIC CONSUMER HERO & BUDGET PLANNER BAR */}
         <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white p-6 rounded-2xl shadow-lg space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider bg-blue-500/20 text-sky-300 border border-sky-400/30 px-2.5 py-0.5 rounded-full mb-2">
-                <Sparkles className="w-3 h-3" /> PayPal Pay in 4 Cash-Flow Planner
+                <Sparkles className="w-3 h-3" /> Smart Bi-Weekly Cash-Flow Planner
               </span>
               <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight">
                 Shop Any Goal Without Colliding With Rent Day
@@ -254,7 +277,7 @@ export default function App() {
             </div>
             <div className="hidden md:flex items-center gap-2 text-xs text-slate-300 bg-white/5 px-3.5 py-2 rounded-xl border border-white/10">
               <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>0% APR Pay in 4 • Mix & Match Any Items or Paycheck Phases</span>
+              <span>Mix & Match Individual Items • Bi-Weekly Paycheck Staggering</span>
             </div>
           </div>
 
@@ -363,18 +386,20 @@ export default function App() {
                       <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
                         Interactive Retail Bundle
                       </span>
-                      <span className="text-[11px] font-semibold text-slate-500">
-                        Click any card below to check/uncheck individual items
+                      <span className="text-[11px] font-bold text-emerald-700">
+                        ✓ Click any card below to select or deselect individual items
                       </span>
                     </div>
                     <h2 className="text-xl font-extrabold text-slate-900">{plan.bundleName}</h2>
-                    <p className="text-xs text-slate-600 mt-1">{plan.rationale}</p>
+                    <p className="text-xs text-slate-600 mt-1">
+                      {plan.rationale.replace(/via 0% APR PayPal Pay in 4/gi, 'across 4 bi-weekly payments')}
+                    </p>
                   </div>
                   <div className="text-right bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200">
-                    <span className="text-[11px] font-bold uppercase text-slate-400 block">Selected Total</span>
+                    <span className="text-[11px] font-bold uppercase text-slate-400 block">Selected Bag Total</span>
                     <span className="text-2xl font-black text-slate-900">${activeCheckout.totalPrice.toFixed(2)}</span>
                     <p className="text-xs font-bold text-emerald-600">
-                      4x ${activeCheckout.biWeekly.toFixed(2)} / 2 wks (0% APR)
+                      4x ${activeCheckout.biWeekly.toFixed(2)} / 2 wks
                     </p>
                   </div>
                 </div>
@@ -384,13 +409,9 @@ export default function App() {
               {plan && (
                 <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-100 p-1.5 rounded-xl">
                   <button
-                    onClick={() => {
-                      setCheckoutMode('FULL');
-                      setCustomCart(null);
-                      setCheckoutComplete(null);
-                    }}
+                    onClick={() => selectPresetGroup('FULL')}
                     className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition cursor-pointer ${
-                      checkoutMode === 'FULL'
+                      activeCheckout.mode === 'FULL'
                         ? 'bg-white text-slate-900 shadow-xs'
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
@@ -398,13 +419,9 @@ export default function App() {
                     All 4 Items (${plan.totalPrice.toFixed(2)} • ${plan.payIn4.biWeeklyAmount.toFixed(2)}/2wks)
                   </button>
                   <button
-                    onClick={() => {
-                      setCheckoutMode('PHASE_1');
-                      setCustomCart(null);
-                      setCheckoutComplete(null);
-                    }}
+                    onClick={() => selectPresetGroup('PHASE_1')}
                     className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition cursor-pointer ${
-                      checkoutMode === 'PHASE_1'
+                      activeCheckout.mode === 'PHASE_1'
                         ? 'bg-blue-600 text-white shadow-xs'
                         : 'text-slate-700 hover:bg-white/60'
                     }`}
@@ -412,22 +429,18 @@ export default function App() {
                     Phase 1: Buy Today (${plan.phasedSplit.phase1.biWeeklyAmount.toFixed(2)}/2wks)
                   </button>
                   <button
-                    onClick={() => {
-                      setCheckoutMode('PHASE_2');
-                      setCustomCart(null);
-                      setCheckoutComplete(null);
-                    }}
+                    onClick={() => selectPresetGroup('PHASE_2')}
                     className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition cursor-pointer ${
-                      checkoutMode === 'PHASE_2'
+                      activeCheckout.mode === 'PHASE_2'
                         ? 'bg-indigo-600 text-white shadow-xs'
                         : 'text-slate-700 hover:bg-white/60'
                     }`}
                   >
                     Phase 2: Wait +28d (${plan.phasedSplit.phase2.biWeeklyAmount.toFixed(2)}/2wks)
                   </button>
-                  {checkoutMode === 'CUSTOM' && customCart && (
+                  {activeCheckout.mode === 'CUSTOM' && (
                     <span className="py-2 px-3 rounded-lg text-xs font-extrabold bg-emerald-600 text-white shadow-xs">
-                      Custom Mix ({customCart.items.length} Items • ${customCart.biWeeklyAmount.toFixed(2)}/2wks)
+                      Custom Mix ({activeCheckout.items.length} Items • ${activeCheckout.biWeekly.toFixed(2)}/2wks)
                     </span>
                   )}
                 </div>
@@ -449,11 +462,11 @@ export default function App() {
                     return (
                       <div
                         key={item.id}
-                        onClick={() => toggleIndividualItem(item.id)}
-                        className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
+                        onClick={() => handleToggleItem(item.id)}
+                        className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between select-none ${
                           isIncludedInActiveCart
                             ? 'bg-white border-blue-600 shadow-sm'
-                            : 'bg-slate-50/70 border-slate-200 opacity-60 hover:opacity-95'
+                            : 'bg-slate-50/70 border-slate-200 opacity-55 hover:opacity-95'
                         }`}
                       >
                         <div>
@@ -465,13 +478,13 @@ export default function App() {
                                   : 'bg-indigo-100 text-indigo-800'
                               }`}
                             >
-                              {isPhase1 ? 'AI Suggested: Paycheck 1' : 'AI Suggested: Paycheck 2 (+28d)'}
+                              {isPhase1 ? 'Suggested: Paycheck 1' : 'Suggested: Paycheck 2 (+28d)'}
                             </span>
                             <span
-                              className={`px-2 py-0.5 rounded-full flex items-center gap-1 text-[10px] font-bold ${
+                              className={`px-2.5 py-0.5 rounded-full flex items-center gap-1 text-[11px] font-extrabold transition ${
                                 isIncludedInActiveCart
                                   ? 'bg-blue-600 text-white'
-                                  : 'border border-slate-300 bg-white text-slate-500'
+                                  : 'border border-slate-300 bg-white text-slate-600'
                               }`}
                             >
                               {isIncludedInActiveCart ? (
@@ -622,7 +635,7 @@ export default function App() {
             )}
           </div>
 
-          {/* RIGHT COLUMN: Sticky Consumer Checkout Bag */}
+          {/* RIGHT COLUMN: Sticky Consumer Checkout Bag (ONLY PLACE WITH PAYPAL BRANDING) */}
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 sticky top-20">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -669,7 +682,7 @@ export default function App() {
                   {checkoutComplete ? (
                     <div className="p-4 bg-emerald-50 border-2 border-emerald-300 rounded-xl text-emerald-950 text-center space-y-2">
                       <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
-                      <h4 className="font-extrabold text-sm text-emerald-900">PayPal Order Confirmed!</h4>
+                      <h4 className="font-extrabold text-sm text-emerald-900">Order Confirmed!</h4>
                       <p className="text-xs text-slate-600">
                         Paid <strong className="text-slate-900">${activeCheckout.totalPrice.toFixed(2)}</strong> via
                         PayPal Sandbox.
@@ -683,18 +696,22 @@ export default function App() {
                       <PayPalButtons
                         fundingSource="paylater"
                         style={{ layout: 'vertical', shape: 'rect', label: 'pay' }}
-                        forceReRender={[activeCheckout.totalPrice, activeCheckout.cartHash, checkoutMode]}
+                        forceReRender={[activeCheckout.totalPrice, activeCheckout.skuIds.join(','), activeCheckout.cartHash]}
                         createOrder={async () => {
                           setErrorBanner(null);
                           const payload = getActiveCheckoutPayload();
+                          let hashToUse = payload.cartHash;
+                          if (!hashToUse && plan) {
+                            hashToUse = await syncSelectionHashWithServer(payload.skuIds, plan, payload.items);
+                          }
                           const res = await fetch(`${API_URL}/api/paypal/create-order`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ skuIds: payload.skuIds, cartHash: payload.cartHash })
+                            body: JSON.stringify({ skuIds: payload.skuIds, cartHash: hashToUse })
                           });
                           const order = await res.json();
                           if (!res.ok || !order.id) {
-                            setErrorBanner(order.error || 'Could not initialize PayPal checkout.');
+                            setErrorBanner(order.error || 'Could not initialize checkout.');
                             throw new Error(order.error || 'Order creation failed');
                           }
                           return order.id;
@@ -717,18 +734,22 @@ export default function App() {
                       <PayPalButtons
                         fundingSource="paypal"
                         style={{ layout: 'vertical', shape: 'rect' }}
-                        forceReRender={[activeCheckout.totalPrice, activeCheckout.cartHash, checkoutMode]}
+                        forceReRender={[activeCheckout.totalPrice, activeCheckout.skuIds.join(','), activeCheckout.cartHash]}
                         createOrder={async () => {
                           setErrorBanner(null);
                           const payload = getActiveCheckoutPayload();
+                          let hashToUse = payload.cartHash;
+                          if (!hashToUse && plan) {
+                            hashToUse = await syncSelectionHashWithServer(payload.skuIds, plan, payload.items);
+                          }
                           const res = await fetch(`${API_URL}/api/paypal/create-order`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ skuIds: payload.skuIds, cartHash: payload.cartHash })
+                            body: JSON.stringify({ skuIds: payload.skuIds, cartHash: hashToUse })
                           });
                           const order = await res.json();
                           if (!res.ok || !order.id) {
-                            setErrorBanner(order.error || 'Could not initialize PayPal checkout.');
+                            setErrorBanner(order.error || 'Could not initialize checkout.');
                             throw new Error(order.error || 'Order creation failed');
                           }
                           return order.id;
@@ -752,7 +773,7 @@ export default function App() {
                   )}
                 </PayPalScriptProvider>
               ) : (
-                <p className="text-xs text-slate-400">Loading PayPal Checkout...</p>
+                <p className="text-xs text-slate-400">Loading Checkout Options...</p>
               )}
             </div>
           </div>

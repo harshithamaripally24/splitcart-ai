@@ -422,7 +422,7 @@ export function buildDynamicFallbackProducts(
 
   return {
     bundleName: resolvedBundleName,
-    rationale: `Curated real-world retail items totaling $${total.toFixed(2)} ($${biWeekly} every 2 weeks via 0% APR PayPal Pay in 4). Toggle phases below to fit your paycheck.`,
+    rationale: `Curated real-world retail items totaling $${total.toFixed(2)} ($${biWeekly} every 2 weeks across 4 payments). Click any card below to customize your bag or split across paychecks.`,
     products,
     chips: [
       {

@@ -2,7 +2,11 @@
 import { buildCashFlowBundlePlan } from '../services/cashflow-planner.service';
 import { getPayPalAccessToken } from '../services/paypal-checkout.service';
 import { computeInstallmentsInDollars, verifyAndSignCart } from '../services/cart-crypto.service';
-import { getRegisteredSkuCount } from '../repositories/quote-registry.repository';
+import {
+  findProductBySku,
+  getRegisteredSkuCount,
+  registerProductsInQuoteStore
+} from '../repositories/quote-registry.repository';
 import { ENV } from '../config/env.config';
 
 export async function getHealthStatus(_req: Request, res: Response) {
@@ -47,7 +51,16 @@ export async function createBundlePlanHandler(req: Request, res: Response, next:
 
 export function signCustomSelectionHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const { skuIds } = req.body || {};
+    const { skuIds, fallbackItems } = req.body || {};
+
+    // If Render restarted and cleared in-memory store, re-hydrate missing SKUs before signing
+    if (Array.isArray(fallbackItems) && fallbackItems.length > 0) {
+      const missing = fallbackItems.filter((item: any) => item?.id && !findProductBySku(String(item.id)));
+      if (missing.length > 0) {
+        registerProductsInQuoteStore(missing);
+      }
+    }
+
     const verified = verifyAndSignCart(skuIds);
     const installments = computeInstallmentsInDollars(verified.totalCents);
     res.json({
