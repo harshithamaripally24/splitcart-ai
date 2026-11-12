@@ -228,23 +228,17 @@ export default function App() {
     const p2Ids = plan.phasedSplit.phase2.skuIds;
 
     let mode: 'FULL' | 'PHASE_1' | 'PHASE_2' | 'CUSTOM' = 'CUSTOM';
-    let label =
-      activeItems.length === 1
-        ? `Single Item Purchase`
-        : `Custom Mix (${activeItems.length} of ${plan.items.length} Items)`;
+    let label = 'Your Selected Items';
     let resolvedHash = customCartHash;
 
     if (activeItems.length === plan.items.length) {
       mode = 'FULL';
-      label = `All ${plan.items.length} Curated Items`;
       resolvedHash = plan.cartHash;
     } else if (activeItems.length === p1Ids.length && activeItems.every(i => p1Ids.includes(i.id))) {
       mode = 'PHASE_1';
-      label = 'Paycheck 1: Essentials (Buy Today)';
       resolvedHash = plan.phasedSplit.phase1.cartHash;
     } else if (activeItems.length === p2Ids.length && activeItems.every(i => p2Ids.includes(i.id))) {
       mode = 'PHASE_2';
-      label = 'Paycheck 2 Items (Buying Today)';
       resolvedHash = plan.phasedSplit.phase2.cartHash;
     }
 
