@@ -5,6 +5,275 @@ import { Product } from '../types/commerce.types';
 const ai = new GoogleGenAI({ apiKey: ENV.GEMINI_API_KEY });
 const GEMINI_TIMEOUT_MS = 12000;
 
+interface CuratedCatalogTemplate {
+  keywords: string[];
+  bundleName: string;
+  items: Array<{
+    name: string;
+    brand: string;
+    category: string;
+    weight: number;
+    tier: 'essential' | 'recommended' | 'upgrade';
+    phase: 'PHASE_1_TODAY' | 'PHASE_2_STAGGERED';
+    description: string;
+  }>;
+}
+
+const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
+  {
+    keywords: ['espresso', 'coffee', 'matcha', 'cafe', 'barista'],
+    bundleName: 'Artisan Home Espresso & Matcha Bar',
+    items: [
+      {
+        name: 'Breville Bambino Plus Espresso Machine',
+        brand: 'Breville',
+        category: 'Espresso Machine',
+        weight: 0.48,
+        tier: 'essential',
+        phase: 'PHASE_1_TODAY',
+        description: '3-second ThermoJet heat-up with automatic microfoam milk texturing wand'
+      },
+      {
+        name: 'Baratza Encore ESP Conical Burr Grinder',
+        brand: 'Baratza',
+        category: 'Coffee Grinder',
+        weight: 0.28,
+        tier: 'essential',
+        phase: 'PHASE_1_TODAY',
+        description: '40-step high-precision grind adjustment engineered for espresso and pour-over'
+      },
+      {
+        name: 'Timemore Black Mirror Nano Espresso Scale',
+        brand: 'Timemore',
+        category: 'Precision Scale',
+        weight: 0.13,
+        tier: 'recommended',
+        phase: 'PHASE_2_STAGGERED',
+        description: '0.1g accuracy with auto-timer and flow-rate tracking for dial-in consistency'
+      },
+      {
+        name: 'Fellow Eddy Steaming Pitcher & WDT Tamper Kit',
+        brand: 'Fellow',
+        category: 'Barista Tools',
+        weight: 0.11,
+        tier: 'upgrade',
+        phase: 'PHASE_2_STAGGERED',
+        description: '304 stainless steel fluted spout pitcher with calibrated spring tamper'
+      }
+    ]
+  },
+  {
+    keywords: ['camp', 'tent', 'outdoor', 'hiking', 'backpacking'],
+    bundleName: 'Ultralight 2-Person Backcountry Camping Kit',
+    items: [
+      {
+        name: 'Big Agnes Copper Spur HV UL2 Tent',
+        brand: 'Big Agnes',
+        category: 'Shelter',
+        weight: 0.45,
+        tier: 'essential',
+        phase: 'PHASE_1_TODAY',
+        description: 'Freestanding 3-season ultralight double-wall tent with dual vestibules'
+      },
+      {
+        name: 'Therm-a-Rest NeoAir XLite NXT Sleeping Pad',
+        brand: 'Therm-a-Rest',
+        category: 'Sleep System',
+        weight: 0.28,
+        tier: 'essential',
+        phase: 'PHASE_1_TODAY',
+        description: '4.5 R-value insulated air pad weighing just 13 oz for cold nights'
+      },
+      {
+        name: 'Jetboil Flash 1.0L Fast Boil Cooking System',
+        brand: 'Jetboil',
+        category: 'Camp Kitchen',
+        weight: 0.16,
+        tier: 'recommended',
+        phase: 'PHASE_2_STAGGERED',
+        description: 'Boils 16 oz of water in 100 seconds with integrated FluxRing heat exchanger'
+      },
+      {
+        name: 'Black Diamond Spot 400-R Rechargeable Headlamp',
+        brand: 'Black Diamond',
+        category: 'Lighting & Safety',
+        weight: 0.11,
+        tier: 'upgrade',
+        phase: 'PHASE_2_STAGGERED',
+        description: 'IP67 waterproof 400-lumen trail headlamp with red night-vision mode'
+      }
+    ]
+  },
+  {
+    keywords: ['baby', 'nursery', 'newborn', 'crib', 'monitor'],
+    bundleName: 'Smart Newborn Nursery & Sleep Safety Setup',
+    items: [
+      {
+        name: 'Babyletto Hudson 3-in-1 Convertible Crib',
+        brand: 'Babyletto',
+        category: 'Nursery Furniture',
+        weight: 0.44,
+        tier: 'essential',
+        phase: 'PHASE_1_TODAY',
+        description: 'GREENGUARD Gold certified sustainable pine crib with toddler bed conversion kit'
+      },
+      {
+        name: 'Nanit Pro Smart Baby Monitor & Wall Mount',
+        brand: 'Nanit',
+        category: 'Safety Tech',
+        weight: 0.30,
+        tier: 'essential',
+        phase: 'PHASE_1_TODAY',
+        description: '1080p HD overhead camera with sensor-free breathing motion and sleep analytics'
+      },
+      {
+        name: 'Newton Baby Breathable Wovenaire Crib Mattress',
+        brand: 'Newton Baby',
+        category: 'Sleep Safety',
+        weight: 0.16,
+        tier: 'recommended',
+        phase: 'PHASE_2_STAGGERED',
+        description: '100% washable, hypoallergenic Dual-Stage air-core mattress for infant and toddler'
+      },
+      {
+        name: 'Hatch Rest+ 2nd Gen Smart Sound Machine',
+        brand: 'Hatch',
+        category: 'Sleep Aid',
+        weight: 0.10,
+        tier: 'upgrade',
+        phase: 'PHASE_2_STAGGERED',
+        description: 'Wi-Fi white noise machine, nightlight, and time-to-rise sleep trainer'
+      }
+    ]
+  },
+  {
+    keywords: ['gym', 'fitness', 'dumbbell', 'workout', 'cardio'],
+    bundleName: 'Compact Apartment Strength & HIIT Home Gym',
+    items: [
+      {
+        name: 'Bowflex SelectTech 552 Adjustable Dumbbells (Pair)',
+        brand: 'Bowflex',
+        category: 'Strength Equipment',
+        weight: 0.46,
+        tier: 'essential',
+        phase: 'PHASE_1_TODAY',
+        description: 'Replaces 15 sets of weights (5 to 52.5 lbs) with rapid turn-dial selection'
+      },
+      {
+        name: 'REP Fitness AB-3100 Adjustable Weight Bench',
+        brand: 'REP Fitness',
+        category: 'Strength Bench',
+        weight: 0.27,
+        tier: 'essential',
+        phase: 'PHASE_1_TODAY',
+        description: '700 lb capacity 6-position FID bench for compact apartment workouts'
+      },
+      {
+        name: 'Manduka PRO 6mm High-Density Exercise Mat',
+        brand: 'Manduka',
+        category: 'Flooring & Mobility',
+        weight: 0.15,
+        tier: 'recommended',
+        phase: 'PHASE_2_STAGGERED',
+        description: 'Ultra-dense closed-cell cushioning for joint protection and noise dampening'
+      },
+      {
+        name: 'Theragun Relief Percussive Therapy Massager',
+        brand: 'Therabody',
+        category: 'Recovery',
+        weight: 0.12,
+        tier: 'upgrade',
+        phase: 'PHASE_2_STAGGERED',
+        description: '16mm amplitude deep muscle recovery gun with 3 specialized attachments'
+      }
+    ]
+  },
+  {
+    keywords: ['video', 'camera', 'podcast', 'cinema', 'studio', '4k'],
+    bundleName: '4K Creator Cinema & Podcast Production Studio',
+    items: [
+      {
+        name: 'Sony FX30 Digital Cinema Camera Body',
+        brand: 'Sony',
+        category: 'Cinema Camera',
+        weight: 0.48,
+        tier: 'essential',
+        phase: 'PHASE_1_TODAY',
+        description: 'Super 35 back-illuminated APS-C CMOS sensor with 10-bit 4:2:2 4K120p recording'
+      },
+      {
+        name: 'Sigma 18-50mm f/2.8 DC DN Contemporary Lens',
+        brand: 'Sigma',
+        category: 'Camera Optics',
+        weight: 0.26,
+        tier: 'essential',
+        phase: 'PHASE_1_TODAY',
+        description: 'Constant f/2.8 aperture zoom lens for razor-sharp studio and handheld video'
+      },
+      {
+        name: 'Shure SM7dB Dynamic Vocal Microphone',
+        brand: 'Shure',
+        category: 'Studio Audio',
+        weight: 0.16,
+        tier: 'recommended',
+        phase: 'PHASE_2_STAGGERED',
+        description: 'Broadcast-standard dynamic XLR microphone with built-in +28dB active preamp'
+      },
+      {
+        name: 'Aputure Amaran 200x S Bi-Color LED Key Light',
+        brand: 'Aputure',
+        category: 'Studio Lighting',
+        weight: 0.10,
+        tier: 'upgrade',
+        phase: 'PHASE_2_STAGGERED',
+        description: '200W dual-blue LED point-source video light with ultra-high SSI color accuracy'
+      }
+    ]
+  },
+  {
+    keywords: ['office', 'desk', 'monitor', 'ergonomic', 'engineer', 'laptop'],
+    bundleName: 'Ergonomic Software Engineer Home Office Setup',
+    items: [
+      {
+        name: 'Dell UltraSharp 27" 4K USB-C Hub Monitor (U2723QE)',
+        brand: 'Dell',
+        category: 'Display',
+        weight: 0.44,
+        tier: 'essential',
+        phase: 'PHASE_1_TODAY',
+        description: 'IPS Black panel with 90W USB-C power delivery and built-in RJ45 Ethernet hub'
+      },
+      {
+        name: 'Keychron Q1 Pro Wireless Custom Mechanical Keyboard',
+        brand: 'Keychron',
+        category: 'Input Devices',
+        weight: 0.26,
+        tier: 'essential',
+        phase: 'PHASE_1_TODAY',
+        description: 'Full CNC machined aluminum body with QMK/VIA support and tactile switches'
+      },
+      {
+        name: 'Logitech MX Master 3S Wireless Performance Mouse',
+        brand: 'Logitech',
+        category: 'Ergonomics',
+        weight: 0.16,
+        tier: 'recommended',
+        phase: 'PHASE_2_STAGGERED',
+        description: '8K DPI optical sensor with MagSpeed electromagnetic scrolling and quiet clicks'
+      },
+      {
+        name: 'BenQ ScreenBar Halo LED Monitor Light Bar',
+        brand: 'BenQ',
+        category: 'Task Lighting',
+        weight: 0.14,
+        tier: 'upgrade',
+        phase: 'PHASE_2_STAGGERED',
+        description: 'Zero-glare asymmetrical optical design with wireless backlight rotary controller'
+      }
+    ]
+  }
+];
+
 export function buildDynamicFallbackProducts(
   userGoal: string,
   targetTotal: number,
@@ -15,72 +284,55 @@ export function buildDynamicFallbackProducts(
   products: Product[];
   chips: Array<{ label: string; prompt: string }>;
 } {
-  const cleanGoal = userGoal.trim() || 'Smart Lifestyle Bundle';
-  const clampedTotal = Math.max(120, Math.min(2400, targetTotal));
-  const p1 = Math.round(clampedTotal * 0.42);
-  const p2 = Math.round(clampedTotal * 0.30);
-  const p3 = Math.round(clampedTotal * 0.16);
-  const p4 = Math.max(15, clampedTotal - (p1 + p2 + p3));
-  const slug = cleanGoal.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 18) || 'bundle';
+  const cleanGoal = userGoal.trim() || 'Craft Home Espresso & Matcha Bar Setup';
+  const lowerGoal = `${cleanGoal} ${tradeOffPrompt || ''}`.toLowerCase();
 
-  const products: Product[] = [
-    {
-      id: `sku-${slug}-core-1`,
-      name: `${cleanGoal} — Premium Main System Setup`,
-      brand: 'ProSeries',
-      category: 'Core Equipment',
-      price: p1,
-      tier: 'essential',
-      phase: 'PHASE_1_TODAY',
-      description: `Primary anchor unit configured for ${cleanGoal}`
-    },
-    {
-      id: `sku-${slug}-core-2`,
-      name: `${cleanGoal} — Essential Companion Gear`,
-      brand: 'ErgoCraft',
-      category: 'Essential Gear',
-      price: p2,
-      tier: 'essential',
-      phase: 'PHASE_1_TODAY',
-      description: `Required secondary piece for Day 1 setup`
-    },
-    {
-      id: `sku-${slug}-acc-3`,
-      name: `${cleanGoal} — High-Performance Upgrade Module`,
-      brand: 'StudioLine',
-      category: 'Upgrade',
-      price: p3,
-      tier: 'recommended',
-      phase: 'PHASE_2_STAGGERED',
-      description: `Expansion module scheduled for Phase 2 paycheck`
-    },
-    {
-      id: `sku-${slug}-acc-4`,
-      name: `${cleanGoal} — Professional Accessory Kit`,
-      brand: 'Essentials+',
-      category: 'Accessories',
-      price: p4,
-      tier: 'upgrade',
-      phase: 'PHASE_2_STAGGERED',
-      description: `Finishing kit and extras${tradeOffPrompt ? ` (${tradeOffPrompt.slice(0, 40)})` : ''}`
-    }
-  ];
+  const isOver1500 = lowerGoal.includes('1,500') || lowerGoal.includes('1,700') || lowerGoal.includes('cinema');
+  let effectiveTotal = isOver1500 ? 1680 : Math.max(120, Math.min(2400, targetTotal));
 
-  const total = p1 + p2 + p3 + p4;
+  if (lowerGoal.includes('15%') || lowerGoal.includes('cheaper') || lowerGoal.includes('reduce')) {
+    effectiveTotal = Math.round(effectiveTotal * 0.85);
+  } else if (lowerGoal.includes('upgrade') || lowerGoal.includes('flagship')) {
+    effectiveTotal = Math.round(effectiveTotal * 1.15);
+  }
+
+  const matched =
+    REAL_RETAIL_TEMPLATES.find(t => t.keywords.some(k => lowerGoal.includes(k))) || REAL_RETAIL_TEMPLATES[0];
+
+  const slug = cleanGoal.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 16) || 'item';
+
+  const p1 = Math.round(effectiveTotal * matched.items[0].weight);
+  const p2 = Math.round(effectiveTotal * matched.items[1].weight);
+  const p3 = Math.round(effectiveTotal * matched.items[2].weight);
+  const p4 = Math.max(19, effectiveTotal - (p1 + p2 + p3));
+  const prices = [p1, p2, p3, p4];
+
+  const products: Product[] = matched.items.map((item, idx) => ({
+    id: `sku-${slug}-${idx + 1}`,
+    name: item.name,
+    brand: item.brand,
+    category: item.category,
+    price: prices[idx],
+    tier: item.tier,
+    phase: item.phase,
+    description: item.description
+  }));
+
+  const total = prices.reduce((a, b) => a + b, 0);
   const biWeekly = (total / 4).toFixed(2);
 
   return {
-    bundleName: `Curated ${cleanGoal}`,
-    rationale: `Tailored 4-item setup totaling $${total.toFixed(2)} ($${biWeekly} every 2 weeks via 0% APR PayPal Pay in 4).`,
+    bundleName: matched.bundleName,
+    rationale: `Curated real-world retail items totaling $${total.toFixed(2)} ($${biWeekly} every 2 weeks via 0% APR PayPal Pay in 4). Toggle individual items below or split across paychecks.`,
     products,
     chips: [
       {
-        label: `Reduce Total by 15% (~$${Math.round((total * 0.85) / 4)}/2wks)`,
-        prompt: `Swap to value-tier models to reduce total bundle cost by 15%`
+        label: `Value Tier (-15% • ~$${Math.round((total * 0.85) / 4)}/2wks)`,
+        prompt: `Swap to value-tier models to reduce total cost by 15%`
       },
       {
-        label: `Upgrade Main Unit (+$${Math.round((total * 0.15) / 4)}/2wks)`,
-        prompt: `Upgrade the primary anchor item to a flagship pro model`
+        label: `Pro Upgrade (+15% • ~$${Math.round((total * 1.15) / 4)}/2wks)`,
+        prompt: `Upgrade primary anchor item to a flagship pro model`
       }
     ]
   };
@@ -98,23 +350,33 @@ export async function discoverProductsWithGemini(
   negotiationChips: Array<{ label: string; prompt: string }>;
   sourceMode: 'gemini-live' | 'deterministic-fallback';
 }> {
-  const prompt = `You are SplitCart AI, an e-commerce product discovery agent.
-Shopper Goal: "${cleanGoal}"
-Target Bi-Weekly Budget: $${cleanBudget.toFixed(2)} every 2 weeks (Target total: ~$${targetTotal.toFixed(2)}).
-Adjustment Request: "${cleanTradeOff || 'None — curate the best 4 items'}".
+  if (!ENV.GEMINI_API_KEY) {
+    const fb = buildDynamicFallbackProducts(cleanGoal, targetTotal, cleanTradeOff);
+    return {
+      bundleName: fb.bundleName,
+      rationale: fb.rationale,
+      rawProducts: fb.products,
+      negotiationChips: fb.chips,
+      sourceMode: 'deterministic-fallback'
+    };
+  }
+
+  const prompt = `You are SplitCart AI, a consumer shopping assistant and PayPal Pay in 4 planner.
+Shopper Search / Goal: "${cleanGoal}"
+Target Bi-Weekly Budget: $${cleanBudget.toFixed(2)} every 2 weeks (Target total cart: ~$${targetTotal.toFixed(2)}).
+Custom Request: "${cleanTradeOff || 'Recommend the best real-world retail items'}".
 
 Instructions:
-1. Discover 4 specific, real-world retail products with real brand names, realistic model names, and realistic US retail prices in USD for "${cleanGoal}".
-2. Keep the sum of the 4 prices at or below $${targetTotal.toFixed(2)}.
-3. Assign 2 core items to phase "PHASE_1_TODAY" and 2 secondary items to "PHASE_2_STAGGERED".
-4. Provide a shopper-friendly rationale and 2 customization chips.`;
+1. Recommend 4 specific, real-world retail products with authentic brand names (e.g., Sony, Breville, Apple, Dyson, REI, Nuna) and specific model names that match "${cleanGoal}". Never use generic placeholder names.
+2. Keep the sum of the 4 prices close to $${targetTotal.toFixed(2)}.
+3. Mark the 2 most important items as phase "PHASE_1_TODAY" (Buy Today) and the 2 secondary/accessory items as "PHASE_2_STAGGERED" (Next Paycheck +28d).
+4. Provide a concise shopper rationale and 2 helpful price/model swap chips.`;
 
   try {
     const geminiCall = ai.models.generateContent({
       model: 'gemini-3.8-flash',
       contents: prompt,
       config: {
-        thinkingConfig: { thinkingBudget: 0 },
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -173,13 +435,13 @@ Instructions:
 
     return {
       bundleName: parsed.bundleName || `Curated ${cleanGoal}`,
-      rationale: parsed.rationale || `Curated for your $${cleanBudget}/2wks budget.`,
+      rationale: parsed.rationale || `Curated for your $${cleanBudget}/2wks PayPal Pay in 4 budget.`,
       rawProducts,
       negotiationChips: Array.isArray(parsed.negotiationChips) ? parsed.negotiationChips.slice(0, 3) : [],
       sourceMode: 'gemini-live'
     };
   } catch (err: any) {
-    console.error('[GeminiDiscoveryService] Fallback activated:', err?.message || err);
+    console.error('[GeminiDiscoveryService] Using curated retail catalog:', err?.message || err);
     const fb = buildDynamicFallbackProducts(cleanGoal, targetTotal, cleanTradeOff);
     return {
       bundleName: fb.bundleName,
