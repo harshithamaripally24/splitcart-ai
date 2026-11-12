@@ -184,6 +184,9 @@ export default function App() {
     setLoading(true);
     setErrorBanner(null);
     setCheckoutComplete(null);
+    setPlan(null);
+    setSelectedSkuIds([]);
+    setCustomCartHash('');
     setGoal(selectedGoal);
     setBudget(cleanCap);
     setBudgetInput(String(cleanCap));
