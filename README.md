@@ -4,9 +4,12 @@
 > SplitCart AI solves cash-flow fragmentation, BNPL loan stacking, and rent-date overdraft collisions for 0% APR PayPal Pay in 4.
 
 ## 🚀 The Problem ("Why Now?")
-* **The Living Expense Collision:** According to the **Federal Reserve Board's SHED & FEDS Notes (June 2026)**, **18% of liquidity-constrained BNPL users** incurred bank overdraft fees when automated installment pulls collided directly with rent day.
-* **The Paycheck Reality:** **84.7% of Americans budget** and **48% live paycheck-to-paycheck** (Debt.com), yet standard e-commerce carts only display total price—blindsiding shoppers with 4-payment schedules that land on heavy bill days.
-* **The Solution:** SplitCart AI acts as an intelligent pre-cart planner that maps any shopping goal against your bi-weekly payroll and bill calendar, automatically staggering purchases into safe, non-colliding paycheck phases.
+* **The Living Expense Collision:** When installment pulls land near rent day or other fixed bills, the timing can create cash-flow stress for households already operating on thin margins.
+* **The Paycheck Reality:** In Debt.com's 2026 budgeting survey, **48% of Americans say they are living paycheck to paycheck**, and **84.67% say they budget**. Most standard e-commerce carts still optimize only for total price, which can hide the timing risk of multiple installment pulls landing on heavy bill days.
+* **The Solution:** SplitCart AI acts as an intelligent pre-cart planner that maps any shopping goal against a shopper's bi-weekly payroll and bill calendar, automatically staggering purchases into safe, non-colliding paycheck phases.
+
+#### Sources
+* Debt.com 2026 Budgeting Survey: https://www.debt.com/research/best-way-to-budget/
 
 ## 🏗️ Visual Architecture & Data Flow
 
