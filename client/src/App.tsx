@@ -12,7 +12,8 @@ import {
   Search,
   ShoppingBag,
   ShieldCheck,
-  Check
+  Check,
+  Trash2
 } from 'lucide-react';
 import { Navbar } from './components/layout/Navbar';
 import type { PlanData, Product } from './types/bundle.types';
@@ -33,6 +34,7 @@ const EXPLORE_IDEAS = [
 ];
 
 function computeLocalInstallments(totalCents: number): [number, number, number, number] {
+  if (totalCents <= 0) return [0, 0, 0, 0];
   const baseCents = Math.floor(totalCents / 4);
   const remainder = totalCents - baseCents * 4;
   return [
@@ -74,6 +76,10 @@ export default function App() {
     currentPlan: PlanData,
     selectedItems: Product[]
   ): Promise<string> => {
+    if (skuIds.length === 0) {
+      setCustomCartHash('');
+      return '';
+    }
     if (skuIds.length === currentPlan.items.length) {
       setCustomCartHash(currentPlan.cartHash);
       return currentPlan.cartHash;
@@ -153,14 +159,8 @@ export default function App() {
     setErrorBanner(null);
     setCheckoutComplete(null);
 
-    const exists = selectedSkuIds.includes(clickedId);
-    if (exists && selectedSkuIds.length <= 1) {
-      setErrorBanner('At least 1 item must remain in your Checkout Bag.');
-      return;
-    }
-
     const updatedSet = new Set(selectedSkuIds);
-    if (exists) {
+    if (updatedSet.has(clickedId)) {
       updatedSet.delete(clickedId);
     } else {
       updatedSet.add(clickedId);
@@ -169,15 +169,19 @@ export default function App() {
     const activeItems = plan.items.filter(i => updatedSet.has(i.id));
     const orderedIds = activeItems.map(i => i.id);
 
-    // Update UI checkboxes immediately (never block on network)
     setSelectedSkuIds(orderedIds);
     syncSelectionHashWithServer(orderedIds, plan, activeItems);
   };
 
-  const selectPresetGroup = (mode: 'FULL' | 'PHASE_1' | 'PHASE_2') => {
+  const selectPresetGroup = (mode: 'FULL' | 'PHASE_1' | 'PHASE_2' | 'EMPTY') => {
     if (!plan) return;
     setErrorBanner(null);
     setCheckoutComplete(null);
+    if (mode === 'EMPTY') {
+      setSelectedSkuIds([]);
+      setCustomCartHash('');
+      return;
+    }
     if (mode === 'FULL') {
       const allIds = plan.items.map(i => i.id);
       setSelectedSkuIds(allIds);
@@ -199,13 +203,26 @@ export default function App() {
         totalPrice: 0,
         biWeekly: 0,
         installments: [0, 0, 0, 0] as [number, number, number, number],
-        label: 'Selected Items',
-        mode: 'FULL' as 'FULL' | 'PHASE_1' | 'PHASE_2' | 'CUSTOM',
+        label: 'Empty Bag',
+        mode: 'EMPTY' as 'FULL' | 'PHASE_1' | 'PHASE_2' | 'CUSTOM' | 'EMPTY',
         items: [] as Product[]
       };
     }
 
     const activeItems = plan.items.filter(i => selectedSkuIds.includes(i.id));
+    if (activeItems.length === 0) {
+      return {
+        skuIds: [] as string[],
+        cartHash: '',
+        totalPrice: 0,
+        biWeekly: 0,
+        installments: [0, 0, 0, 0] as [number, number, number, number],
+        label: 'No Items Selected',
+        mode: 'EMPTY' as 'FULL' | 'PHASE_1' | 'PHASE_2' | 'CUSTOM' | 'EMPTY',
+        items: [] as Product[]
+      };
+    }
+
     const totalCents = activeItems.reduce((sum, i) => sum + Math.round(i.price * 100), 0);
     const totalPrice = Number((totalCents / 100).toFixed(2));
     const installments = computeLocalInstallments(totalCents);
@@ -214,7 +231,10 @@ export default function App() {
     const p2Ids = plan.phasedSplit.phase2.skuIds;
 
     let mode: 'FULL' | 'PHASE_1' | 'PHASE_2' | 'CUSTOM' = 'CUSTOM';
-    let label = `Custom Selection (${activeItems.length} of ${plan.items.length} Items)`;
+    let label =
+      activeItems.length === 1
+        ? `Single Item Purchase`
+        : `Custom Mix (${activeItems.length} of ${plan.items.length} Items)`;
     let resolvedHash = customCartHash;
 
     if (activeItems.length === plan.items.length) {
@@ -223,11 +243,11 @@ export default function App() {
       resolvedHash = plan.cartHash;
     } else if (activeItems.length === p1Ids.length && activeItems.every(i => p1Ids.includes(i.id))) {
       mode = 'PHASE_1';
-      label = 'Phase 1: Day-1 Essentials (Buy Today)';
+      label = 'Paycheck 1: Essentials (Buy Today)';
       resolvedHash = plan.phasedSplit.phase1.cartHash;
     } else if (activeItems.length === p2Ids.length && activeItems.every(i => p2Ids.includes(i.id))) {
       mode = 'PHASE_2';
-      label = 'Phase 2: Upgrades (+28 Days)';
+      label = 'Paycheck 2 Items (Buying Today)';
       resolvedHash = plan.phasedSplit.phase2.cartHash;
     }
 
@@ -258,6 +278,10 @@ export default function App() {
 
   const activeCheckout = getActiveCheckoutPayload();
   const activeSkuSet = new Set(activeCheckout.skuIds);
+  const biWeeklySavedVsFull =
+    plan && activeCheckout.items.length > 0 && activeCheckout.items.length < plan.items.length
+      ? Number((plan.payIn4.biWeeklyAmount - activeCheckout.biWeekly).toFixed(2))
+      : 0;
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 pb-12">
@@ -272,26 +296,26 @@ export default function App() {
                 <Sparkles className="w-3 h-3" /> Smart Bi-Weekly Cash-Flow Planner
               </span>
               <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight">
-                Shop Any Goal Without Colliding With Rent Day
+                Shop Any Item or Project Without Colliding With Rent Day
               </h1>
             </div>
             <div className="hidden md:flex items-center gap-2 text-xs text-slate-300 bg-white/5 px-3.5 py-2 rounded-xl border border-white/10">
               <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>Mix & Match Individual Items • Bi-Weekly Paycheck Staggering</span>
+              <span>Buy 1 Item, Custom Mix, or Split Across Paychecks</span>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end bg-white p-4 rounded-xl text-slate-900 shadow-sm">
             <div className="md:col-span-5">
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                What are you shopping for? (Item or Project)
+                What are you shopping for? (Single Item or Full Setup)
               </label>
               <div className="relative">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                 <input
                   type="text"
                   value={goal}
-                  placeholder="e.g., Espresso Bar, Sony Camera, Baby Nursery..."
+                  placeholder="e.g., Espresso Machine, Sony Camera, Baby Crib..."
                   onChange={e => setGoal(e.target.value)}
                   onKeyDown={e => {
                     if (e.key === 'Enter' && !loading) loadScenario(goal, budget);
@@ -343,7 +367,7 @@ export default function App() {
                 className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg text-sm transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
               >
                 <Sparkles className="w-4 h-4" />
-                {loading ? 'Curating...' : 'Plan Cart'}
+                {loading ? 'Searching...' : 'Search'}
               </button>
             </div>
           </div>
@@ -384,28 +408,43 @@ export default function App() {
                   <div className="max-w-xl">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                        Interactive Retail Bundle
+                        {activeCheckout.items.length === 1
+                          ? 'Single Product Mode'
+                          : activeCheckout.items.length === 0
+                          ? 'Bag Empty — Select Any Item Below'
+                          : 'Interactive Shopping Options'}
                       </span>
                       <span className="text-[11px] font-bold text-emerald-700">
-                        ✓ Click any card below to select or deselect individual items
+                        ✓ Click any item card to check or uncheck
                       </span>
                     </div>
                     <h2 className="text-xl font-extrabold text-slate-900">{plan.bundleName}</h2>
                     <p className="text-xs text-slate-600 mt-1">
-                      {plan.rationale.replace(/via 0% APR PayPal Pay in 4/gi, 'across 4 bi-weekly payments')}
+                      {plan.rationale
+                        .replace(/via 0% APR PayPal Pay in 4/gi, 'across 4 bi-weekly payments')
+                        .replace(/PayPal Pay in 4|PayPal|Pay in 4/gi, '4 bi-weekly payments')}
                     </p>
                   </div>
                   <div className="text-right bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200">
                     <span className="text-[11px] font-bold uppercase text-slate-400 block">Selected Bag Total</span>
                     <span className="text-2xl font-black text-slate-900">${activeCheckout.totalPrice.toFixed(2)}</span>
-                    <p className="text-xs font-bold text-emerald-600">
-                      4x ${activeCheckout.biWeekly.toFixed(2)} / 2 wks
-                    </p>
+                    {activeCheckout.items.length > 0 ? (
+                      <p className="text-xs font-bold text-emerald-600">
+                        4x ${activeCheckout.biWeekly.toFixed(2)} / 2 wks
+                      </p>
+                    ) : (
+                      <p className="text-xs font-semibold text-slate-400">$0.00 due today</p>
+                    )}
+                    {biWeeklySavedVsFull > 0 && (
+                      <span className="inline-block mt-1 text-[10px] font-extrabold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                        Lowering bi-weekly payment by -${biWeeklySavedVsFull.toFixed(2)}/2wks
+                      </span>
+                    )}
                   </div>
                 </div>
               )}
 
-              {/* PHASE PRESET TABS + CUSTOM SELECTION INDICATOR */}
+              {/* QUICK SELECTION BAR (INCLUDES CLEAR BAG) */}
               {plan && (
                 <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-100 p-1.5 rounded-xl">
                   <button
@@ -416,7 +455,7 @@ export default function App() {
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    All 4 Items (${plan.totalPrice.toFixed(2)} • ${plan.payIn4.biWeeklyAmount.toFixed(2)}/2wks)
+                    All 4 Items (${plan.payIn4.biWeeklyAmount.toFixed(2)}/2wks)
                   </button>
                   <button
                     onClick={() => selectPresetGroup('PHASE_1')}
@@ -426,7 +465,7 @@ export default function App() {
                         : 'text-slate-700 hover:bg-white/60'
                     }`}
                   >
-                    Phase 1: Buy Today (${plan.phasedSplit.phase1.biWeeklyAmount.toFixed(2)}/2wks)
+                    Paycheck 1 Essentials (${plan.phasedSplit.phase1.biWeeklyAmount.toFixed(2)}/2wks)
                   </button>
                   <button
                     onClick={() => selectPresetGroup('PHASE_2')}
@@ -436,17 +475,21 @@ export default function App() {
                         : 'text-slate-700 hover:bg-white/60'
                     }`}
                   >
-                    Phase 2: Wait +28d (${plan.phasedSplit.phase2.biWeeklyAmount.toFixed(2)}/2wks)
+                    Accessories Only (${plan.phasedSplit.phase2.biWeeklyAmount.toFixed(2)}/2wks)
                   </button>
-                  {activeCheckout.mode === 'CUSTOM' && (
-                    <span className="py-2 px-3 rounded-lg text-xs font-extrabold bg-emerald-600 text-white shadow-xs">
-                      Custom Mix ({activeCheckout.items.length} Items • ${activeCheckout.biWeekly.toFixed(2)}/2wks)
-                    </span>
+                  {activeCheckout.items.length > 0 && (
+                    <button
+                      onClick={() => selectPresetGroup('EMPTY')}
+                      title="Remove all items from bag"
+                      className="py-2 px-3 rounded-lg text-xs font-bold text-slate-500 hover:text-red-600 hover:bg-white/60 transition flex items-center gap-1 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Clear Bag
+                    </button>
                   )}
                 </div>
               )}
 
-              {/* INTERACTIVE PRODUCT CARDS (CLICK ANY CARD TO TOGGLE IN/OUT OF CART) */}
+              {/* INTERACTIVE PRODUCT CARDS (DYNAMIC BADGES THAT MAKE SENSE) */}
               {loading ? (
                 <div className="w-full py-16 flex flex-col items-center justify-center bg-slate-50 rounded-xl border border-slate-200 text-sm text-slate-600 gap-3">
                   <RefreshCw className="w-7 h-7 animate-spin text-blue-600" />
@@ -459,6 +502,23 @@ export default function App() {
                     const isIncludedInActiveCart = activeSkuSet.has(item.id);
                     const itemBiWeekly = (item.price / 4).toFixed(2);
 
+                    // Dynamic badge text so selected items NEVER say "Wait +28d"
+                    let statusBadgeText = 'Not Selected';
+                    let statusBadgeClass = 'bg-slate-200 text-slate-600';
+
+                    if (isIncludedInActiveCart) {
+                      statusBadgeText =
+                        activeCheckout.items.length === 1
+                          ? 'Buying Today • Single Item'
+                          : 'Buying Today • In Your Bag';
+                      statusBadgeClass = 'bg-emerald-100 text-emerald-800';
+                    } else if (activeCheckout.items.length > 0) {
+                      statusBadgeText = isPhase1
+                        ? 'Unchecked • Core Option'
+                        : 'Defer to Next Paycheck (+28d)';
+                      statusBadgeClass = 'bg-amber-100 text-amber-800';
+                    }
+
                     return (
                       <div
                         key={item.id}
@@ -466,19 +526,15 @@ export default function App() {
                         className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between select-none ${
                           isIncludedInActiveCart
                             ? 'bg-white border-blue-600 shadow-sm'
-                            : 'bg-slate-50/70 border-slate-200 opacity-55 hover:opacity-95'
+                            : 'bg-slate-50/70 border-slate-200 opacity-60 hover:opacity-95'
                         }`}
                       >
                         <div>
                           <div className="flex items-center justify-between gap-2 mb-2">
                             <span
-                              className={`text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
-                                isPhase1
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : 'bg-indigo-100 text-indigo-800'
-                              }`}
+                              className={`text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${statusBadgeClass}`}
                             >
-                              {isPhase1 ? 'Suggested: Paycheck 1' : 'Suggested: Paycheck 2 (+28d)'}
+                              {statusBadgeText}
                             </span>
                             <span
                               className={`px-2.5 py-0.5 rounded-full flex items-center gap-1 text-[11px] font-extrabold transition ${
@@ -492,7 +548,7 @@ export default function App() {
                                   <Check className="w-3 h-3" /> In Bag
                                 </>
                               ) : (
-                                '+ Add'
+                                '+ Add to Bag'
                               )}
                             </span>
                           </div>
@@ -549,7 +605,7 @@ export default function App() {
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      placeholder="Ask AI to swap any item, add a product, or change budget (e.g., 'Swap to a cheaper grinder', 'Keep under $450')..."
+                      placeholder="Ask AI to swap any item, find a single product, or adjust budget (e.g., 'Cheaper grinder', 'Under $400')..."
                       value={customTradeOff}
                       onChange={e => setCustomTradeOff(e.target.value)}
                       onKeyDown={e => {
@@ -570,15 +626,15 @@ export default function App() {
                       }}
                       className="bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer"
                     >
-                      <Send className="w-3.5 h-3.5" /> Update Cart
+                      <Send className="w-3.5 h-3.5" /> Update
                     </button>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* PAYMENT SCHEDULE & RENT-DAY COLLISION GUARD */}
-            {plan && (
+            {/* PAYMENT SCHEDULE & RENT-DAY COLLISION GUARD (ONLY SHOWN WHEN >= 1 ITEM SELECTED) */}
+            {plan && activeCheckout.items.length > 0 && (
               <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-5">
                 <div className="flex flex-wrap justify-between items-center gap-2">
                   <div>
@@ -591,21 +647,22 @@ export default function App() {
                     </p>
                   </div>
 
-                  <button
-                    onClick={() => setShowPhasedPlanner(!showPhasedPlanner)}
-                    className="text-xs font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
-                  >
-                    <Split className="w-3.5 h-3.5" />
-                    {showPhasedPlanner
-                      ? 'Hide 2-Phase Breakdown'
-                      : `Cut Today's Payment by -$${plan.phasedSplit.peakBiWeeklyDrop.toFixed(2)}/2wks`}
-                  </button>
+                  {/* Only show 2-Phase split button if 2 or more items are selected */}
+                  {activeCheckout.items.length >= 2 && (
+                    <button
+                      onClick={() => selectPresetGroup('PHASE_1')}
+                      className="text-xs font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Split className="w-3.5 h-3.5" />
+                      Split Cart Across 2 Paychecks
+                    </button>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {plan.payIn4.schedule.map((slot, idx) => {
                     const collision = checkRentCollision(slot.isoDate || slot.date);
-                    const displayAmount = activeCheckout.installments[idx] ?? slot.amount;
+                    const displayAmount = activeCheckout.installments[idx] ?? 0;
                     return (
                       <div
                         key={slot.installment}
@@ -648,132 +705,154 @@ export default function App() {
                 </div>
                 <div className="text-right">
                   <span className="text-xl font-black text-slate-900">${activeCheckout.totalPrice.toFixed(2)}</span>
-                  <span className="block text-[11px] font-extrabold text-emerald-600">
-                    4x ${activeCheckout.biWeekly.toFixed(2)} / 2 wks
-                  </span>
+                  {activeCheckout.items.length > 0 && (
+                    <span className="block text-[11px] font-extrabold text-emerald-600">
+                      4x ${activeCheckout.biWeekly.toFixed(2)} / 2 wks
+                    </span>
+                  )}
                 </div>
               </div>
 
-              <ul className="text-xs text-slate-700 space-y-2 border-b border-slate-100 pb-3">
-                {activeCheckout.items.map(item => (
-                  <li key={item.id} className="flex justify-between items-center gap-2">
-                    <span className="font-medium truncate">{item.name}</span>
-                    <span className="font-bold text-slate-900 shrink-0">${item.price.toFixed(2)}</span>
-                  </li>
-                ))}
-              </ul>
-
-              {paypalClientId && plan ? (
-                <PayPalScriptProvider
-                  options={{
-                    clientId: paypalClientId,
-                    components: 'buttons,messages',
-                    enableFunding: 'paylater',
-                    currency: 'USD'
-                  }}
-                >
-                  <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-100">
-                    <PayPalMessages
-                      amount={activeCheckout.totalPrice}
-                      style={{ layout: 'text', logo: { type: 'primary' } }}
-                    />
-                  </div>
-
-                  {checkoutComplete ? (
-                    <div className="p-4 bg-emerald-50 border-2 border-emerald-300 rounded-xl text-emerald-950 text-center space-y-2">
-                      <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
-                      <h4 className="font-extrabold text-sm text-emerald-900">Order Confirmed!</h4>
-                      <p className="text-xs text-slate-600">
-                        Paid <strong className="text-slate-900">${activeCheckout.totalPrice.toFixed(2)}</strong> via
-                        PayPal Sandbox.
-                      </p>
-                      <p className="text-[11px] font-mono text-slate-700 bg-white py-1 px-2.5 rounded border border-emerald-200 inline-block">
-                        Capture ID: {checkoutComplete.captureId || checkoutComplete.id}
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <PayPalButtons
-                        fundingSource="paylater"
-                        style={{ layout: 'vertical', shape: 'rect', label: 'pay' }}
-                        forceReRender={[activeCheckout.totalPrice, activeCheckout.skuIds.join(','), activeCheckout.cartHash]}
-                        createOrder={async () => {
-                          setErrorBanner(null);
-                          const payload = getActiveCheckoutPayload();
-                          let hashToUse = payload.cartHash;
-                          if (!hashToUse && plan) {
-                            hashToUse = await syncSelectionHashWithServer(payload.skuIds, plan, payload.items);
-                          }
-                          const res = await fetch(`${API_URL}/api/paypal/create-order`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ skuIds: payload.skuIds, cartHash: hashToUse })
-                          });
-                          const order = await res.json();
-                          if (!res.ok || !order.id) {
-                            setErrorBanner(order.error || 'Could not initialize checkout.');
-                            throw new Error(order.error || 'Order creation failed');
-                          }
-                          return order.id;
-                        }}
-                        onApprove={async (data: any) => {
-                          setErrorBanner(null);
-                          const res = await fetch(`${API_URL}/api/paypal/capture-order`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ orderID: data.orderID })
-                          });
-                          const capture = await res.json();
-                          if (!res.ok || capture.error) {
-                            setErrorBanner(capture.error || 'Payment could not be completed.');
-                            return;
-                          }
-                          setCheckoutComplete(capture);
-                        }}
-                      />
-                      <PayPalButtons
-                        fundingSource="paypal"
-                        style={{ layout: 'vertical', shape: 'rect' }}
-                        forceReRender={[activeCheckout.totalPrice, activeCheckout.skuIds.join(','), activeCheckout.cartHash]}
-                        createOrder={async () => {
-                          setErrorBanner(null);
-                          const payload = getActiveCheckoutPayload();
-                          let hashToUse = payload.cartHash;
-                          if (!hashToUse && plan) {
-                            hashToUse = await syncSelectionHashWithServer(payload.skuIds, plan, payload.items);
-                          }
-                          const res = await fetch(`${API_URL}/api/paypal/create-order`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ skuIds: payload.skuIds, cartHash: hashToUse })
-                          });
-                          const order = await res.json();
-                          if (!res.ok || !order.id) {
-                            setErrorBanner(order.error || 'Could not initialize checkout.');
-                            throw new Error(order.error || 'Order creation failed');
-                          }
-                          return order.id;
-                        }}
-                        onApprove={async (data: any) => {
-                          setErrorBanner(null);
-                          const res = await fetch(`${API_URL}/api/paypal/capture-order`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ orderID: data.orderID })
-                          });
-                          const capture = await res.json();
-                          if (!res.ok || capture.error) {
-                            setErrorBanner(capture.error || 'Payment could not be completed.');
-                            return;
-                          }
-                          setCheckoutComplete(capture);
-                        }}
-                      />
-                    </div>
-                  )}
-                </PayPalScriptProvider>
+              {activeCheckout.items.length === 0 ? (
+                <div className="py-8 text-center space-y-2">
+                  <ShoppingBag className="w-8 h-8 text-slate-300 mx-auto" />
+                  <p className="text-xs font-bold text-slate-700">Your Checkout Bag is Empty</p>
+                  <p className="text-[11px] text-slate-500">
+                    Click any product card on the left to add 1 or more items, or search for a new item above.
+                  </p>
+                </div>
               ) : (
-                <p className="text-xs text-slate-400">Loading Checkout Options...</p>
+                <>
+                  <ul className="text-xs text-slate-700 space-y-2 border-b border-slate-100 pb-3">
+                    {activeCheckout.items.map(item => (
+                      <li key={item.id} className="flex justify-between items-center gap-2">
+                        <span className="font-medium truncate">{item.name}</span>
+                        <span className="font-bold text-slate-900 shrink-0">${item.price.toFixed(2)}</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  {paypalClientId && plan ? (
+                    <PayPalScriptProvider
+                      options={{
+                        clientId: paypalClientId,
+                        components: 'buttons,messages',
+                        enableFunding: 'paylater',
+                        currency: 'USD'
+                      }}
+                    >
+                      <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-100">
+                        <PayPalMessages
+                          amount={activeCheckout.totalPrice}
+                          style={{ layout: 'text', logo: { type: 'primary' } }}
+                        />
+                      </div>
+
+                      {checkoutComplete ? (
+                        <div className="p-4 bg-emerald-50 border-2 border-emerald-300 rounded-xl text-emerald-950 text-center space-y-2">
+                          <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
+                          <h4 className="font-extrabold text-sm text-emerald-900">Order Confirmed!</h4>
+                          <p className="text-xs text-slate-600">
+                            Paid <strong className="text-slate-900">${activeCheckout.totalPrice.toFixed(2)}</strong> via
+                            PayPal Sandbox.
+                          </p>
+                          <p className="text-[11px] font-mono text-slate-700 bg-white py-1 px-2.5 rounded border border-emerald-200 inline-block">
+                            Capture ID: {checkoutComplete.captureId || checkoutComplete.id}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <PayPalButtons
+                            fundingSource="paylater"
+                            style={{ layout: 'vertical', shape: 'rect', label: 'pay' }}
+                            forceReRender={[
+                              activeCheckout.totalPrice,
+                              activeCheckout.skuIds.join(','),
+                              activeCheckout.cartHash
+                            ]}
+                            createOrder={async () => {
+                              setErrorBanner(null);
+                              const payload = getActiveCheckoutPayload();
+                              let hashToUse = payload.cartHash;
+                              if (!hashToUse && plan) {
+                                hashToUse = await syncSelectionHashWithServer(payload.skuIds, plan, payload.items);
+                              }
+                              const res = await fetch(`${API_URL}/api/paypal/create-order`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ skuIds: payload.skuIds, cartHash: hashToUse })
+                              });
+                              const order = await res.json();
+                              if (!res.ok || !order.id) {
+                                setErrorBanner(order.error || 'Could not initialize checkout.');
+                                throw new Error(order.error || 'Order creation failed');
+                              }
+                              return order.id;
+                            }}
+                            onApprove={async (data: any) => {
+                              setErrorBanner(null);
+                              const res = await fetch(`${API_URL}/api/paypal/capture-order`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ orderID: data.orderID })
+                              });
+                              const capture = await res.json();
+                              if (!res.ok || capture.error) {
+                                setErrorBanner(capture.error || 'Payment could not be completed.');
+                                return;
+                              }
+                              setCheckoutComplete(capture);
+                            }}
+                          />
+                          <PayPalButtons
+                            fundingSource="paypal"
+                            style={{ layout: 'vertical', shape: 'rect' }}
+                            forceReRender={[
+                              activeCheckout.totalPrice,
+                              activeCheckout.skuIds.join(','),
+                              activeCheckout.cartHash
+                            ]}
+                            createOrder={async () => {
+                              setErrorBanner(null);
+                              const payload = getActiveCheckoutPayload();
+                              let hashToUse = payload.cartHash;
+                              if (!hashToUse && plan) {
+                                hashToUse = await syncSelectionHashWithServer(payload.skuIds, plan, payload.items);
+                              }
+                              const res = await fetch(`${API_URL}/api/paypal/create-order`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ skuIds: payload.skuIds, cartHash: hashToUse })
+                              });
+                              const order = await res.json();
+                              if (!res.ok || !order.id) {
+                                setErrorBanner(order.error || 'Could not initialize checkout.');
+                                throw new Error(order.error || 'Order creation failed');
+                              }
+                              return order.id;
+                            }}
+                            onApprove={async (data: any) => {
+                              setErrorBanner(null);
+                              const res = await fetch(`${API_URL}/api/paypal/capture-order`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ orderID: data.orderID })
+                              });
+                              const capture = await res.json();
+                              if (!res.ok || capture.error) {
+                                setErrorBanner(capture.error || 'Payment could not be completed.');
+                                return;
+                              }
+                              setCheckoutComplete(capture);
+                            }}
+                          />
+                        </div>
+                      )}
+                    </PayPalScriptProvider>
+                  ) : (
+                    <p className="text-xs text-slate-400">Loading Checkout Options...</p>
+                  )}
+                </>
               )}
             </div>
           </div>
