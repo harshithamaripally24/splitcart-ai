@@ -56,7 +56,6 @@ export default function App() {
   const [plan, setPlan] = useState<PlanData | null>(null);
   const [selectedSkuIds, setSelectedSkuIds] = useState<string[]>([]);
   const [customCartHash, setCustomCartHash] = useState<string>('');
-  const [showPhasedPlanner, setShowPhasedPlanner] = useState(false);
   const [checkoutComplete, setCheckoutComplete] = useState<any>(null);
 
   const requestCounterRef = useRef(0);
