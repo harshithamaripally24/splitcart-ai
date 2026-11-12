@@ -4,11 +4,19 @@ import { registerProductsInQuoteStore } from '../repositories/quote-registry.rep
 import { ValidationError } from '../errors/http-errors';
 import { BundlePlanResponse, Product } from '../types/commerce.types';
 
-function isDateSafeFromBillDay(dateObj: Date, rentDueDay: number): boolean {
-  const dayOfMonth = dateObj.getDate();
-  const directDiff = Math.abs(dayOfMonth - rentDueDay);
-  const minDiff = Math.min(directDiff, 30 - directDiff);
-  return minDiff > 2;
+export function isDateSafeFromBillDay(dateObj: Date, rentDueDay: number): boolean {
+  const year = dateObj.getFullYear();
+  const month = dateObj.getMonth();
+  const targetUtcNoon = Date.UTC(year, month, dateObj.getDate(), 12, 0, 0);
+
+  for (const m of [month - 1, month, month + 1]) {
+    const daysInMonth = new Date(Date.UTC(year, m + 1, 0)).getUTCDate();
+    const clampedBillDay = Math.min(rentDueDay, daysInMonth);
+    const billUtcNoon = Date.UTC(year, m, clampedBillDay, 12, 0, 0);
+    const diffDays = Math.round(Math.abs(targetUtcNoon - billUtcNoon) / 86400000);
+    if (diffDays <= 2) return false;
+  }
+  return true;
 }
 
 function buildFourInstallmentSchedule(
@@ -55,9 +63,17 @@ export async function buildCashFlowBundlePlan(
     tradeOffPrompt || ''
   );
 
-  const normalizedProducts: Product[] = discovered.rawProducts.map((item: Product, idx: number) => {
+  const prioritizedRaw = [...discovered.rawProducts].sort((a, b) => {
+    const aScore = a.phase === 'PHASE_1_TODAY' || a.tier === 'essential' ? 1 : 0;
+    const bScore = b.phase === 'PHASE_1_TODAY' || b.tier === 'essential' ? 1 : 0;
+    return bScore - aScore;
+  });
+
+  const normalizedProducts: Product[] = prioritizedRaw.map((item: Product, idx: number) => {
     const cleanPrice = Number(Math.max(5, Number(item.price)).toFixed(2));
-    const cleanId = String(item.id || 'sku-' + (idx + 1)).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48);
+    const priceCents = Math.round(cleanPrice * 100);
+    const rawId = String(item.id || ('sku-' + (idx + 1))).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 36);
+    const cleanId = rawId.endsWith(String(priceCents)) ? rawId : (rawId + '-' + priceCents);
     return {
       ...item,
       id: cleanId,
@@ -112,8 +128,8 @@ export async function buildCashFlowBundlePlan(
       installments: fullInstallments,
       schedule: buildFourInstallmentSchedule(fullInstallments, cleanRentDay),
       statusMessage: payIn4Eligible
-        ? 'Eligible for 4 bi-weekly payments of $' + biWeeklyAmount.toFixed(2)
-        : 'Full cart ($' + totalPrice.toFixed(2) + ') exceeds the $1,500 single-order installment cap.'
+        ? 'Eligible for 4 bi-weekly PayPal Pay in 4 payments of $' + biWeeklyAmount.toFixed(2) + ' (0% APR)'
+        : 'Full cart ($' + totalPrice.toFixed(2) + ') exceeds the $1,500 single-order Pay in 4 cap.'
     },
     payMonthly: {
       eligible: totalPrice >= 199,
@@ -123,9 +139,9 @@ export async function buildCashFlowBundlePlan(
     phasedSplit: {
       recommended: !payIn4Eligible || exceedsComfortCap,
       reason: !payIn4Eligible
-        ? 'Full bundle ($' + totalPrice.toFixed(2) + ') exceeds the $1,500 single-order limit. Buying Phase 1 Essentials today ($' + p1Verified.total.toFixed(2) + ') and Phase 2 Extras in 28 days ($' + p2Verified.total.toFixed(2) + ') keeps both orders eligible.'
+        ? 'Full bundle ($' + totalPrice.toFixed(2) + ') exceeds the $1,500 single-order PayPal Pay in 4 limit. Buying Phase 1 Essentials today ($' + p1Verified.total.toFixed(2) + ') and Phase 2 Extras in 28 days ($' + p2Verified.total.toFixed(2) + ') unlocks 0% APR Pay in 4 on both orders.'
         : exceedsComfortCap
-        ? 'Full bundle ($' + biWeeklyAmount.toFixed(2) + '/2wks) is above your $' + cleanBudget + '/2wks cap. Buying Phase 1 Essentials first lowers your payment to $' + p1Installments[0].toFixed(2) + '/2wks.'
+        ? 'Full bundle ($' + biWeeklyAmount.toFixed(2) + '/2wks) is above your $' + cleanBudget + '/2wks comfort cap. Buying Phase 1 Essentials first lowers your immediate payment to $' + p1Installments[0].toFixed(2) + '/2wks.'
         : 'Buying Phase 1 Essentials today lowers your immediate bi-weekly payment from $' + biWeeklyAmount.toFixed(2) + ' to $' + p1Installments[0].toFixed(2) + '/2wks.',
       peakBiWeeklyDrop,
       phase1: {

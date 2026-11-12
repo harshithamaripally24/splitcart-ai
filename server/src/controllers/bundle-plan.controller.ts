@@ -3,14 +3,9 @@ import { buildCashFlowBundlePlan } from '../services/cashflow-planner.service';
 import { getPayPalAccessToken } from '../services/paypal-checkout.service';
 import {
   computeInstallmentsInDollars,
-  verifyAndSignCart,
-  verifySingleItemQuote
+  verifyAndSignCart
 } from '../services/cart-crypto.service';
-import {
-  findProductBySku,
-  getRegisteredSkuCount,
-  registerProductsInQuoteStore
-} from '../repositories/quote-registry.repository';
+import { getRegisteredSkuCount } from '../repositories/quote-registry.repository';
 import { ENV } from '../config/env.config';
 import { Product } from '../types/commerce.types';
 
@@ -60,20 +55,7 @@ export async function createBundlePlanHandler(req: Request, res: Response, next:
 
 export function signCustomSelectionHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const { skuIds, fallbackItems } = req.body || {};
-
-    if (Array.isArray(fallbackItems) && fallbackItems.length > 0) {
-      const verifiedMissing = fallbackItems.filter(
-        (item: any) =>
-          item?.id &&
-          !findProductBySku(String(item.id)) &&
-          verifySingleItemQuote(String(item.id), Number(item.price), item.itemSig)
-      );
-      if (verifiedMissing.length > 0) {
-        registerProductsInQuoteStore(verifiedMissing);
-      }
-    }
-
+    const { skuIds } = req.body || {};
     const verified = verifyAndSignCart(skuIds);
     const installments = computeInstallmentsInDollars(verified.totalCents);
     res.json({

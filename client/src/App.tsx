@@ -14,20 +14,21 @@ import {
   ShieldCheck,
   Check,
   Trash2,
-  Clock
+  Clock,
+  Lock
 } from 'lucide-react';
 import { Navbar } from './components/layout/Navbar';
 import type { PlanData, Product } from './types/bundle.types';
 import { API_URL, fetchClientConfig, requestBundlePlan } from './services/splitcart-api.client';
 
 const EXPLORE_IDEAS = [
-  { label: '☕ Home Espresso Bar', goal: 'Craft Home Espresso & Matcha Bar Setup', budget: 160 },
-  { label: '⛺ 2-Person Camping Kit', goal: 'Ultralight 2-Person Weekend Camping Gear Setup', budget: 140 },
-  { label: '👶 Baby Nursery', goal: 'Modern Newborn Baby Nursery & Monitor Setup', budget: 180 },
-  { label: '🏋️ Compact Home Gym', goal: 'Apartment Adjustable Dumbbell & Cardio Home Gym', budget: 150 },
-  { label: '💻 Home Office Desk', goal: 'Remote Software Engineer Ergonomic Desk Setup', budget: 145 },
+  { label: '\u2615 Home Espresso Bar', goal: 'Craft Home Espresso & Matcha Bar Setup', budget: 160 },
+  { label: '\u26fa 2-Person Camping Kit', goal: 'Ultralight 2-Person Weekend Camping Gear Setup', budget: 140 },
+  { label: '\ud83d\udc76 Baby Nursery', goal: 'Modern Newborn Baby Nursery & Monitor Setup', budget: 180 },
+  { label: '\ud83c\udfcb\ufe0f Compact Home Gym', goal: 'Apartment Adjustable Dumbbell & Cardio Home Gym', budget: 150 },
+  { label: '\ud83d\udcbb Home Office Desk', goal: 'Remote Software Engineer Ergonomic Desk Setup', budget: 145 },
   {
-    label: '🎥 Pro Video Studio ($1,680+)',
+    label: '\ud83c\udfa5 Pro Video Studio ($1,680+)',
     goal: '4K Cinema Camera & Podcast Studio Kit',
     budget: 420,
     prompt: 'Select flagship pro models totaling around $1,700'
@@ -46,21 +47,32 @@ function computeLocalInstallments(totalCents: number): [number, number, number, 
   ];
 }
 
+function getMinDaysToBillDate(dateObj: Date, billDay: number): number {
+  const year = dateObj.getFullYear();
+  const month = dateObj.getMonth();
+  const targetUtcNoon = Date.UTC(year, month, dateObj.getDate(), 12, 0, 0);
+
+  let minDiffDays = 999;
+  for (const m of [month - 1, month, month + 1]) {
+    const daysInMonth = new Date(Date.UTC(year, m + 1, 0)).getUTCDate();
+    const clampedBillDay = Math.min(billDay, daysInMonth);
+    const billUtcNoon = Date.UTC(year, m, clampedBillDay, 12, 0, 0);
+    const diffDays = Math.round(Math.abs(targetUtcNoon - billUtcNoon) / 86400000);
+    if (diffDays < minDiffDays) minDiffDays = diffDays;
+  }
+  return minDiffDays;
+}
+
 function isDateSafeFromBillDay(dateObj: Date, billDay: number): boolean {
-  const dayOfMonth = dateObj.getDate();
-  const directDiff = Math.abs(dayOfMonth - billDay);
-  const minDiff = Math.min(directDiff, 30 - directDiff);
-  return minDiff > 2;
+  return getMinDaysToBillDate(dateObj, billDay) > 2;
 }
 
 function computeBestDayToBuy(billDay: number): {
   buyTodaySafe: boolean;
   recommendedDateLabel: string;
   daysToWait: number;
-  scheduleFromBestDay: { label: string; dateLabel: string }[];
 } {
   const offsets = [0, 14, 28, 42];
-  const labels = ['Payment 1', 'Payment 2 (+14d)', 'Payment 3 (+28d)', 'Payment 4 (+42d)'];
   const today = new Date();
 
   for (let wait = 0; wait <= 14; wait++) {
@@ -80,16 +92,8 @@ function computeBestDayToBuy(billDay: number): {
       });
       return {
         buyTodaySafe: wait === 0,
-        recommendedDateLabel: wait === 0 ? `Today (${formatted})` : formatted,
-        daysToWait: wait,
-        scheduleFromBestDay: offsets.map((off, idx) => {
-          const d = new Date(candidateStart);
-          d.setDate(candidateStart.getDate() + off);
-          return {
-            label: labels[idx],
-            dateLabel: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-          };
-        })
+        recommendedDateLabel: wait === 0 ? ('Today (' + formatted + ')') : formatted,
+        daysToWait: wait
       };
     }
   }
@@ -97,8 +101,7 @@ function computeBestDayToBuy(billDay: number): {
   return {
     buyTodaySafe: true,
     recommendedDateLabel: 'Today',
-    daysToWait: 0,
-    scheduleFromBestDay: []
+    daysToWait: 0
   };
 }
 
@@ -136,8 +139,7 @@ export default function App() {
 
   const syncSelectionHashWithServer = async (
     skuIds: string[],
-    currentPlan: PlanData,
-    selectedItems: Product[]
+    currentPlan: PlanData
   ): Promise<string> => {
     if (skuIds.length === 0) {
       setCustomCartHash('');
@@ -159,22 +161,21 @@ export default function App() {
     }
 
     try {
-      const res = await fetch(`${API_URL}/api/agent/sign-selection`, {
+      const res = await fetch(API_URL + '/api/agent/sign-selection', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ skuIds, fallbackItems: selectedItems })
+        body: JSON.stringify({ skuIds })
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.cartHash) {
-          setCustomCartHash(data.cartHash);
-          return data.cartHash;
-        }
+      const data = await res.json();
+      if (!res.ok || !data?.cartHash) {
+        throw new Error(data?.error || 'Unable to verify custom item selection with server.');
       }
-    } catch {
-      // Silent background sync
+      setCustomCartHash(data.cartHash);
+      return data.cartHash;
+    } catch (err: any) {
+      setErrorBanner(err.message || 'Unable to sign custom selection. Please click Plan Cart to refresh.');
+      return '';
     }
-    return '';
   };
 
   const loadScenario = async (selectedGoal: string, selectedBudget: number, tradeOffPrompt?: string) => {
@@ -241,7 +242,7 @@ export default function App() {
     const orderedIds = activeItems.map(i => i.id);
 
     setSelectedSkuIds(orderedIds);
-    syncSelectionHashWithServer(orderedIds, plan, activeItems);
+    syncSelectionHashWithServer(orderedIds, plan);
   };
 
   const selectPresetGroup = (mode: 'FULL' | 'PHASE_1' | 'PHASE_2' | 'EMPTY') => {
@@ -307,7 +308,7 @@ export default function App() {
 
     if (activeItems.length === plan.items.length) {
       mode = 'FULL';
-      label = `All ${plan.items.length} Curated Items`;
+      label = 'All ' + plan.items.length + ' Curated Items';
       resolvedHash = plan.cartHash;
     } else if (activeItems.length === p1Ids.length && activeItems.every(i => p1Ids.includes(i.id))) {
       mode = 'PHASE_1';
@@ -331,16 +332,51 @@ export default function App() {
     };
   };
 
+  const handlePayPalCreateOrder = async (): Promise<string> => {
+    setErrorBanner(null);
+    const payload = getActiveCheckoutPayload();
+    let hashToUse = payload.cartHash;
+    if (!hashToUse && plan) {
+      hashToUse = await syncSelectionHashWithServer(payload.skuIds, plan);
+    }
+    if (!hashToUse) {
+      throw new Error('Missing server quote signature. Please click Plan Cart to refresh.');
+    }
+    const res = await fetch(API_URL + '/api/paypal/create-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skuIds: payload.skuIds, cartHash: hashToUse })
+    });
+    const order = await res.json();
+    if (!res.ok || !order.id) {
+      setErrorBanner(order.error || 'Could not initialize checkout.');
+      throw new Error(order.error || 'Order creation failed');
+    }
+    return order.id;
+  };
+
+  const handlePayPalApprove = async (data: any): Promise<void> => {
+    setErrorBanner(null);
+    const res = await fetch(API_URL + '/api/paypal/capture-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderID: data.orderID })
+    });
+    const capture = await res.json();
+    if (!res.ok || capture.error) {
+      setErrorBanner(capture.error || 'Payment could not be completed.');
+      return;
+    }
+    setCheckoutComplete(capture);
+  };
+
   const checkRentCollision = (isoOrDateStr: string) => {
     const parsed = new Date(isoOrDateStr);
-    if (isNaN(parsed.getTime())) return { safe: true, dayOfMonth: 1, shiftDays: 0 };
-    const dayOfMonth = parsed.getDate();
-    const directDiff = Math.abs(dayOfMonth - rentDueDay);
-    const minDiff = Math.min(directDiff, 30 - directDiff);
+    if (isNaN(parsed.getTime())) return { safe: true, minDiff: 10 };
+    const minDiff = getMinDaysToBillDate(parsed, rentDueDay);
     return {
       safe: minDiff > 2,
-      dayOfMonth,
-      shiftDays: minDiff <= 2 ? 3 - minDiff : 0
+      minDiff
     };
   };
 
@@ -352,6 +388,12 @@ export default function App() {
       : 0;
   const bestBuyTiming = computeBestDayToBuy(rentDueDay);
   const isWithinCap = activeCheckout.biWeekly <= budget;
+  const isPayLaterEligible = activeCheckout.totalPrice >= 30 && activeCheckout.totalPrice <= 1500;
+  const buttonRenderKey = [
+    activeCheckout.totalPrice,
+    activeCheckout.skuIds.join(','),
+    activeCheckout.cartHash
+  ];
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 pb-12">
@@ -370,7 +412,7 @@ export default function App() {
             </div>
             <div className="hidden md:flex items-center gap-2 text-xs text-slate-300 bg-white/5 px-3.5 py-2 rounded-xl border border-white/10">
               <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>Essentials First • Best Purchase Date Solver</span>
+              <span>Essentials First {'\u2022'} Best Purchase Date Solver</span>
             </div>
           </div>
 
@@ -497,19 +539,15 @@ export default function App() {
                         {activeCheckout.items.length === 1
                           ? 'Single Item Selected'
                           : activeCheckout.items.length === 0
-                          ? 'Bag Empty — Select Any Item Below'
+                          ? 'Bag Empty \u2014 Select Any Item Below'
                           : 'Interactive Shopping Checklist'}
                       </span>
                       <span className="text-[11px] font-bold text-emerald-700">
-                        ✓ Click any card to check or uncheck
+                        {'\u2713'} Click any card to check or uncheck
                       </span>
                     </div>
                     <h2 className="text-xl font-extrabold text-slate-900">{plan.bundleName}</h2>
-                    <p className="text-xs text-slate-600 mt-1">
-                      {plan.rationale
-                        .replace(/via 0% APR PayPal Pay in 4/gi, 'across 4 bi-weekly payments')
-                        .replace(/PayPal Pay in 4|PayPal|Pay in 4/gi, '4 bi-weekly payments')}
-                    </p>
+                    <p className="text-xs text-slate-600 mt-1">{plan.rationale}</p>
                   </div>
                   <div className="text-right bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200">
                     <span className="text-[11px] font-bold uppercase text-slate-400 block">Selected Bag Total</span>
@@ -520,9 +558,9 @@ export default function App() {
                           4x ${activeCheckout.biWeekly.toFixed(2)} / 2 wks
                         </p>
                         <p
-                          className={`text-[11px] font-bold mt-0.5 ${
-                            isWithinCap ? 'text-slate-600' : 'text-amber-700'
-                          }`}
+                          className={
+                            'text-[11px] font-bold mt-0.5 ' + (isWithinCap ? 'text-slate-600' : 'text-amber-700')
+                          }
                         >
                           ${activeCheckout.biWeekly.toFixed(2)} of your ${budget}/2wks cap used
                         </p>
@@ -539,35 +577,56 @@ export default function App() {
                 </div>
               )}
 
+              {plan && plan.phasedSplit.recommended && activeCheckout.mode === 'FULL' && (
+                <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs text-blue-950">
+                  <div className="flex items-start gap-2.5 max-w-xl">
+                    <Split className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-extrabold block text-blue-900">Smart 2-Paycheck Split Recommended</span>
+                      <span className="text-slate-700">{plan.phasedSplit.reason}</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => selectPresetGroup('PHASE_1')}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3.5 py-2 rounded-lg text-xs transition shrink-0 cursor-pointer"
+                  >
+                    Buy Essentials First (${plan.phasedSplit.phase1.biWeeklyAmount.toFixed(2)}/2wks)
+                  </button>
+                </div>
+              )}
+
               {plan && (
                 <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-100 p-1.5 rounded-xl">
                   <button
                     onClick={() => selectPresetGroup('FULL')}
-                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition cursor-pointer ${
-                      activeCheckout.mode === 'FULL'
+                    className={
+                      'flex-1 py-2 px-3 rounded-lg text-xs font-bold transition cursor-pointer ' +
+                      (activeCheckout.mode === 'FULL'
                         ? 'bg-white text-slate-900 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
+                        : 'text-slate-600 hover:text-slate-900')
+                    }
                   >
                     All 4 Items (${plan.payIn4.biWeeklyAmount.toFixed(2)}/2wks)
                   </button>
                   <button
                     onClick={() => selectPresetGroup('PHASE_1')}
-                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition cursor-pointer ${
-                      activeCheckout.mode === 'PHASE_1'
+                    className={
+                      'flex-1 py-2 px-3 rounded-lg text-xs font-bold transition cursor-pointer ' +
+                      (activeCheckout.mode === 'PHASE_1'
                         ? 'bg-blue-600 text-white shadow-xs'
-                        : 'text-slate-700 hover:bg-white/60'
-                    }`}
+                        : 'text-slate-700 hover:bg-white/60')
+                    }
                   >
                     Essentials First (${plan.phasedSplit.phase1.biWeeklyAmount.toFixed(2)}/2wks)
                   </button>
                   <button
                     onClick={() => selectPresetGroup('PHASE_2')}
-                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition cursor-pointer ${
-                      activeCheckout.mode === 'PHASE_2'
+                    className={
+                      'flex-1 py-2 px-3 rounded-lg text-xs font-bold transition cursor-pointer ' +
+                      (activeCheckout.mode === 'PHASE_2'
                         ? 'bg-indigo-600 text-white shadow-xs'
-                        : 'text-slate-700 hover:bg-white/60'
-                    }`}
+                        : 'text-slate-700 hover:bg-white/60')
+                    }
                   >
                     Extras Only (${plan.phasedSplit.phase2.biWeeklyAmount.toFixed(2)}/2wks)
                   </button>
@@ -599,10 +658,14 @@ export default function App() {
                     let statusBadgeClass = 'bg-slate-200 text-slate-600';
 
                     if (isIncludedInActiveCart) {
-                      statusBadgeText = isPhase1 ? 'Essential • In Your Bag' : 'Extra • In Your Bag';
+                      statusBadgeText = isPhase1
+                        ? 'Essential \u2022 In Your Bag'
+                        : 'Extra \u2022 In Your Bag';
                       statusBadgeClass = 'bg-emerald-100 text-emerald-800';
                     } else if (activeCheckout.items.length > 0) {
-                      statusBadgeText = isPhase1 ? 'Essential • Unchecked' : 'Can Wait • Next Paycheck (+28d)';
+                      statusBadgeText = isPhase1
+                        ? 'Essential \u2022 Unchecked'
+                        : 'Can Wait \u2022 Next Paycheck (+28d)';
                       statusBadgeClass = 'bg-amber-100 text-amber-800';
                     }
 
@@ -610,25 +673,30 @@ export default function App() {
                       <div
                         key={item.id}
                         onClick={() => handleToggleItem(item.id)}
-                        className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between select-none ${
-                          isIncludedInActiveCart
+                        className={
+                          'p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between select-none ' +
+                          (isIncludedInActiveCart
                             ? 'bg-white border-blue-600 shadow-sm'
-                            : 'bg-slate-50/70 border-slate-200 opacity-60 hover:opacity-95'
-                        }`}
+                            : 'bg-slate-50/70 border-slate-200 opacity-60 hover:opacity-95')
+                        }
                       >
                         <div>
                           <div className="flex items-center justify-between gap-2 mb-2">
                             <span
-                              className={`text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${statusBadgeClass}`}
+                              className={
+                                'text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full ' +
+                                statusBadgeClass
+                              }
                             >
                               {statusBadgeText}
                             </span>
                             <span
-                              className={`px-2.5 py-0.5 rounded-full flex items-center gap-1 text-[11px] font-extrabold transition ${
-                                isIncludedInActiveCart
+                              className={
+                                'px-2.5 py-0.5 rounded-full flex items-center gap-1 text-[11px] font-extrabold transition ' +
+                                (isIncludedInActiveCart
                                   ? 'bg-blue-600 text-white'
-                                  : 'border border-slate-300 bg-white text-slate-600'
-                              }`}
+                                  : 'border border-slate-300 bg-white text-slate-600')
+                              }
                             >
                               {isIncludedInActiveCart ? (
                                 <>
@@ -642,7 +710,7 @@ export default function App() {
 
                           <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 uppercase tracking-wide">
                             <span>{item.brand || 'Demo Catalog'}</span>
-                            <span>•</span>
+                            <span>{'\u2022'}</span>
                             <span>{item.category}</span>
                           </div>
 
@@ -720,7 +788,6 @@ export default function App() {
               )}
             </div>
 
-            {/* PAYMENT SCHEDULE & BEST DAY TO BUY SOLVER */}
             {plan && activeCheckout.items.length > 0 && (
               <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-5">
                 <div className="flex flex-wrap justify-between items-center gap-2">
@@ -745,24 +812,25 @@ export default function App() {
                   )}
                 </div>
 
-                {/* BEST DAY TO BUY RECOMMENDATION BANNER */}
                 <div
-                  className={`p-3.5 rounded-xl border flex items-start gap-2.5 text-xs ${
-                    bestBuyTiming.buyTodaySafe
+                  className={
+                    'p-3.5 rounded-xl border flex items-start gap-2.5 text-xs ' +
+                    (bestBuyTiming.buyTodaySafe
                       ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
-                      : 'bg-amber-50 border-amber-300 text-amber-950'
-                  }`}
+                      : 'bg-amber-50 border-amber-300 text-amber-950')
+                  }
                 >
                   <Clock
-                    className={`w-4 h-4 shrink-0 mt-0.5 ${
-                      bestBuyTiming.buyTodaySafe ? 'text-emerald-600' : 'text-amber-700'
-                    }`}
+                    className={
+                      'w-4 h-4 shrink-0 mt-0.5 ' +
+                      (bestBuyTiming.buyTodaySafe ? 'text-emerald-600' : 'text-amber-700')
+                    }
                   />
                   <div>
                     {bestBuyTiming.buyTodaySafe ? (
                       <p className="font-bold">
-                        Best day to buy: <span className="underline">{bestBuyTiming.recommendedDateLabel}</span> — none
-                        of the 4 payments (Day 0, +14d, +28d, +42d) land within 2 days of the{' '}
+                        Best day to buy: <span className="underline">{bestBuyTiming.recommendedDateLabel}</span>{' '}
+                        {'\u2014'} none of the 4 payments (Day 0, +14d, +28d, +42d) land within 2 days of the{' '}
                         {formatOrdinal(rentDueDay)}.
                       </p>
                     ) : (
@@ -783,9 +851,10 @@ export default function App() {
                     return (
                       <div
                         key={slot.installment}
-                        className={`p-3.5 rounded-xl border-2 ${
-                          collision.safe ? 'bg-slate-50 border-slate-200' : 'bg-amber-50 border-amber-400'
-                        }`}
+                        className={
+                          'p-3.5 rounded-xl border-2 ' +
+                          (collision.safe ? 'bg-slate-50 border-slate-200' : 'bg-amber-50 border-amber-400')
+                        }
                       >
                         <span className="text-[11px] font-bold text-slate-500 block">{slot.label}</span>
                         <span className="text-xl font-black text-slate-900 mt-1 block">
@@ -794,11 +863,12 @@ export default function App() {
                         <span className="text-xs font-semibold text-slate-600 block">{slot.date}</span>
                         {collision.safe ? (
                           <span className="text-[10px] text-emerald-700 font-bold mt-1.5 block">
-                            ✓ Clears bill day ({formatOrdinal(rentDueDay)})
+                            {'\u2713'} Clears bill day ({formatOrdinal(rentDueDay)})
                           </span>
                         ) : (
                           <span className="text-[10px] text-amber-900 font-extrabold mt-1.5 block">
-                            ⚠ Near {formatOrdinal(rentDueDay)} bill • Buy {bestBuyTiming.recommendedDateLabel}
+                            {'\u26a0'} Near {formatOrdinal(rentDueDay)} bill {'\u2022'} Buy{' '}
+                            {bestBuyTiming.recommendedDateLabel}
                           </span>
                         )}
                       </div>
@@ -848,6 +918,39 @@ export default function App() {
                     ))}
                   </ul>
 
+                  {activeCheckout.cartHash && (
+                    <div
+                      title="Server-issued HMAC-SHA256 signature binding SKU IDs and cent-exact totals before PayPal Order creation"
+                      className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between text-[11px] text-slate-600"
+                    >
+                      <span className="flex items-center gap-1.5 font-semibold text-slate-700">
+                        <Lock className="w-3.5 h-3.5 text-emerald-600" />
+                        HMAC-SHA256 Signed Quote
+                      </span>
+                      <code className="font-mono text-[10px] bg-white px-1.5 py-0.5 rounded border border-slate-200 text-slate-800">
+                        #{activeCheckout.cartHash.slice(0, 10)}
+                      </code>
+                    </div>
+                  )}
+
+                  {!isPayLaterEligible && (
+                    <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-950 space-y-2">
+                      <p className="font-bold">
+                        {activeCheckout.totalPrice > 1500
+                          ? 'Cart ($' + activeCheckout.totalPrice.toFixed(2) + ') exceeds the $1,500 single-order PayPal Pay in 4 cap.'
+                          : 'PayPal Pay in 4 requires a minimum cart of $30.00.'}
+                      </p>
+                      {activeCheckout.totalPrice > 1500 && plan && (
+                        <button
+                          onClick={() => selectPresetGroup('PHASE_1')}
+                          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-1.5 px-3 rounded-lg text-xs transition cursor-pointer"
+                        >
+                          Switch to Phase 1 Essentials (${plan.phasedSplit.phase1.totalPrice.toFixed(2)}) to Unlock Pay in 4
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   {paypalClientId && plan ? (
                     <PayPalScriptProvider
                       options={{
@@ -871,89 +974,21 @@ export default function App() {
                         </div>
                       ) : (
                         <div className="space-y-2">
-                          <PayPalButtons
-                            fundingSource="paylater"
-                            style={{ layout: 'vertical', shape: 'rect', label: 'pay' }}
-                            forceReRender={[
-                              activeCheckout.totalPrice,
-                              activeCheckout.skuIds.join(','),
-                              activeCheckout.cartHash
-                            ]}
-                            createOrder={async () => {
-                              setErrorBanner(null);
-                              const payload = getActiveCheckoutPayload();
-                              let hashToUse = payload.cartHash;
-                              if (!hashToUse && plan) {
-                                hashToUse = await syncSelectionHashWithServer(payload.skuIds, plan, payload.items);
-                              }
-                              const res = await fetch(`${API_URL}/api/paypal/create-order`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ skuIds: payload.skuIds, cartHash: hashToUse })
-                              });
-                              const order = await res.json();
-                              if (!res.ok || !order.id) {
-                                setErrorBanner(order.error || 'Could not initialize checkout.');
-                                throw new Error(order.error || 'Order creation failed');
-                              }
-                              return order.id;
-                            }}
-                            onApprove={async (data: any) => {
-                              setErrorBanner(null);
-                              const res = await fetch(`${API_URL}/api/paypal/capture-order`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ orderID: data.orderID })
-                              });
-                              const capture = await res.json();
-                              if (!res.ok || capture.error) {
-                                setErrorBanner(capture.error || 'Payment could not be completed.');
-                                return;
-                              }
-                              setCheckoutComplete(capture);
-                            }}
-                          />
+                          {isPayLaterEligible && (
+                            <PayPalButtons
+                              fundingSource="paylater"
+                              style={{ layout: 'vertical', shape: 'rect', label: 'pay' }}
+                              forceReRender={buttonRenderKey}
+                              createOrder={handlePayPalCreateOrder}
+                              onApprove={handlePayPalApprove}
+                            />
+                          )}
                           <PayPalButtons
                             fundingSource="paypal"
                             style={{ layout: 'vertical', shape: 'rect' }}
-                            forceReRender={[
-                              activeCheckout.totalPrice,
-                              activeCheckout.skuIds.join(','),
-                              activeCheckout.cartHash
-                            ]}
-                            createOrder={async () => {
-                              setErrorBanner(null);
-                              const payload = getActiveCheckoutPayload();
-                              let hashToUse = payload.cartHash;
-                              if (!hashToUse && plan) {
-                                hashToUse = await syncSelectionHashWithServer(payload.skuIds, plan, payload.items);
-                              }
-                              const res = await fetch(`${API_URL}/api/paypal/create-order`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ skuIds: payload.skuIds, cartHash: hashToUse })
-                              });
-                              const order = await res.json();
-                              if (!res.ok || !order.id) {
-                                setErrorBanner(order.error || 'Could not initialize checkout.');
-                                throw new Error(order.error || 'Order creation failed');
-                              }
-                              return order.id;
-                            }}
-                            onApprove={async (data: any) => {
-                              setErrorBanner(null);
-                              const res = await fetch(`${API_URL}/api/paypal/capture-order`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ orderID: data.orderID })
-                              });
-                              const capture = await res.json();
-                              if (!res.ok || capture.error) {
-                                setErrorBanner(capture.error || 'Payment could not be completed.');
-                                return;
-                              }
-                              setCheckoutComplete(capture);
-                            }}
+                            forceReRender={buttonRenderKey}
+                            createOrder={handlePayPalCreateOrder}
+                            onApprove={handlePayPalApprove}
                           />
                         </div>
                       )}

@@ -3,13 +3,13 @@ import { ENV } from '../config/env.config';
 import { Product } from '../types/commerce.types';
 
 const ai = new GoogleGenAI({ apiKey: ENV.GEMINI_API_KEY });
-const GEMINI_TIMEOUT_MS = 12000;
+const GEMINI_TIMEOUT_MS = 10000;
 
 interface CatalogItemTemplate {
   name: string;
   brand: string;
   category: string;
-  weight: number;
+  basePrice: number;
   tier: 'essential' | 'recommended' | 'upgrade';
   phase: 'PHASE_1_TODAY' | 'PHASE_2_STAGGERED';
   description: string;
@@ -23,14 +23,14 @@ interface CuratedCatalogTemplate {
 
 const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
   {
-    keywords: ['espresso', 'coffee', 'matcha', 'cafe', 'barista', 'latte', 'grinder'],
+    keywords: ['espresso', 'coffee', 'matcha', 'cafe', 'barista', 'latte', 'grinder', 'breville', 'baratza'],
     bundleName: 'Artisan Home Espresso & Matcha Bar',
     items: [
       {
         name: 'Breville Bambino Plus Espresso Machine',
         brand: 'Breville',
         category: 'Espresso Machine',
-        weight: 0.48,
+        basePrice: 299.95,
         tier: 'essential',
         phase: 'PHASE_1_TODAY',
         description: '3-second ThermoJet heat-up with automatic microfoam milk texturing wand'
@@ -39,7 +39,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         name: 'Baratza Encore ESP Conical Burr Grinder',
         brand: 'Baratza',
         category: 'Coffee Grinder',
-        weight: 0.28,
+        basePrice: 199.95,
         tier: 'essential',
         phase: 'PHASE_1_TODAY',
         description: '40-step high-precision grind adjustment engineered for espresso and pour-over'
@@ -48,7 +48,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         name: 'Timemore Black Mirror Nano Espresso Scale',
         brand: 'Timemore',
         category: 'Precision Scale',
-        weight: 0.13,
+        basePrice: 69.00,
         tier: 'recommended',
         phase: 'PHASE_2_STAGGERED',
         description: '0.1g accuracy with auto-timer and flow-rate tracking for dial-in consistency'
@@ -57,7 +57,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         name: 'Fellow Eddy Steaming Pitcher & WDT Tamper Kit',
         brand: 'Fellow',
         category: 'Barista Tools',
-        weight: 0.11,
+        basePrice: 55.00,
         tier: 'upgrade',
         phase: 'PHASE_2_STAGGERED',
         description: '304 stainless steel fluted spout pitcher with calibrated spring tamper'
@@ -86,7 +86,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         name: 'Big Agnes Copper Spur HV UL2 Tent',
         brand: 'Big Agnes',
         category: 'Shelter',
-        weight: 0.45,
+        basePrice: 229.95,
         tier: 'essential',
         phase: 'PHASE_1_TODAY',
         description: 'Freestanding 3-season ultralight double-wall tent with dual vestibules'
@@ -95,7 +95,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         name: 'Therm-a-Rest NeoAir XLite NXT Sleeping Pad',
         brand: 'Therm-a-Rest',
         category: 'Sleep System',
-        weight: 0.28,
+        basePrice: 149.95,
         tier: 'essential',
         phase: 'PHASE_1_TODAY',
         description: '4.5 R-value insulated air pad weighing just 13 oz for cold nights'
@@ -104,7 +104,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         name: 'Jetboil Flash 1.0L Fast Boil Cooking System',
         brand: 'Jetboil',
         category: 'Camp Kitchen',
-        weight: 0.16,
+        basePrice: 89.95,
         tier: 'recommended',
         phase: 'PHASE_2_STAGGERED',
         description: 'Boils 16 oz of water in 100 seconds with integrated FluxRing heat exchanger'
@@ -113,7 +113,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         name: 'Black Diamond Spot 400-R Rechargeable Headlamp',
         brand: 'Black Diamond',
         category: 'Lighting & Safety',
-        weight: 0.11,
+        basePrice: 49.95,
         tier: 'upgrade',
         phase: 'PHASE_2_STAGGERED',
         description: 'IP67 waterproof 400-lumen trail headlamp with red night-vision mode'
@@ -121,14 +121,14 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
     ]
   },
   {
-    keywords: ['baby', 'nursery', 'newborn', 'crib', 'monitor', 'babyletto', 'nanit', 'newton', 'hatch', 'stroller'],
+    keywords: ['baby', 'nursery', 'newborn', 'crib', 'monitor', 'babyletto', 'nanit', 'newton', 'hatch', 'mattress'],
     bundleName: 'Smart Newborn Nursery & Sleep Safety Setup',
     items: [
       {
         name: 'Babyletto Hudson 3-in-1 Convertible Crib',
         brand: 'Babyletto',
         category: 'Nursery Furniture',
-        weight: 0.44,
+        basePrice: 299.00,
         tier: 'essential',
         phase: 'PHASE_1_TODAY',
         description: 'GREENGUARD Gold certified sustainable pine crib with toddler bed conversion kit'
@@ -137,7 +137,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         name: 'Newton Baby Breathable Wovenaire Crib Mattress',
         brand: 'Newton Baby',
         category: 'Sleep Safety',
-        weight: 0.28,
+        basePrice: 189.00,
         tier: 'essential',
         phase: 'PHASE_1_TODAY',
         description: '100% washable, hypoallergenic Dual-Stage air-core mattress for infant and toddler'
@@ -146,7 +146,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         name: 'Nanit Pro Smart Baby Monitor & Wall Mount',
         brand: 'Nanit',
         category: 'Safety Tech',
-        weight: 0.18,
+        basePrice: 139.00,
         tier: 'recommended',
         phase: 'PHASE_2_STAGGERED',
         description: '1080p HD overhead camera with sensor-free breathing motion and sleep analytics'
@@ -155,7 +155,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         name: 'Hatch Rest+ 2nd Gen Smart Sound Machine',
         brand: 'Hatch',
         category: 'Sleep Aid',
-        weight: 0.10,
+        basePrice: 59.99,
         tier: 'upgrade',
         phase: 'PHASE_2_STAGGERED',
         description: 'Wi-Fi white noise machine, nightlight, and time-to-rise sleep trainer'
@@ -170,7 +170,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         name: 'Bowflex SelectTech 552 Adjustable Dumbbells (Pair)',
         brand: 'Bowflex',
         category: 'Strength Equipment',
-        weight: 0.46,
+        basePrice: 279.00,
         tier: 'essential',
         phase: 'PHASE_1_TODAY',
         description: 'Replaces 15 sets of weights (5 to 52.5 lbs) with rapid turn-dial selection'
@@ -179,7 +179,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         name: 'REP Fitness AB-3100 Adjustable Weight Bench',
         brand: 'REP Fitness',
         category: 'Strength Bench',
-        weight: 0.27,
+        basePrice: 169.00,
         tier: 'essential',
         phase: 'PHASE_1_TODAY',
         description: '700 lb capacity 6-position FID bench for compact apartment workouts'
@@ -188,7 +188,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         name: 'Manduka PRO 6mm High-Density Exercise Mat',
         brand: 'Manduka',
         category: 'Flooring & Mobility',
-        weight: 0.15,
+        basePrice: 78.00,
         tier: 'recommended',
         phase: 'PHASE_2_STAGGERED',
         description: 'Ultra-dense closed-cell cushioning for joint protection and noise dampening'
@@ -197,7 +197,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         name: 'Theragun Relief Percussive Therapy Massager',
         brand: 'Therabody',
         category: 'Recovery',
-        weight: 0.12,
+        basePrice: 69.00,
         tier: 'upgrade',
         phase: 'PHASE_2_STAGGERED',
         description: '16mm amplitude deep muscle recovery gun with 3 specialized attachments'
@@ -212,7 +212,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         name: 'Sony FX30 Digital Cinema Camera Body',
         brand: 'Sony',
         category: 'Cinema Camera',
-        weight: 0.48,
+        basePrice: 799.00,
         tier: 'essential',
         phase: 'PHASE_1_TODAY',
         description: 'Super 35 back-illuminated APS-C CMOS sensor with 10-bit 4:2:2 4K120p recording'
@@ -221,7 +221,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         name: 'Sigma 18-50mm f/2.8 DC DN Contemporary Lens',
         brand: 'Sigma',
         category: 'Camera Optics',
-        weight: 0.26,
+        basePrice: 429.00,
         tier: 'essential',
         phase: 'PHASE_1_TODAY',
         description: 'Constant f/2.8 aperture zoom lens for razor-sharp studio and handheld video'
@@ -230,7 +230,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         name: 'Shure SM7dB Dynamic Vocal Microphone',
         brand: 'Shure',
         category: 'Studio Audio',
-        weight: 0.16,
+        basePrice: 279.00,
         tier: 'recommended',
         phase: 'PHASE_2_STAGGERED',
         description: 'Broadcast-standard dynamic XLR microphone with built-in +28dB active preamp'
@@ -239,7 +239,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         name: 'Aputure Amaran 200x S Bi-Color LED Key Light',
         brand: 'Aputure',
         category: 'Studio Lighting',
-        weight: 0.10,
+        basePrice: 179.00,
         tier: 'upgrade',
         phase: 'PHASE_2_STAGGERED',
         description: '200W dual-blue LED point-source video light with ultra-high SSI color accuracy'
@@ -254,7 +254,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         name: 'Dell UltraSharp 27" 4K USB-C Hub Monitor (U2723QE)',
         brand: 'Dell',
         category: 'Display',
-        weight: 0.44,
+        basePrice: 249.00,
         tier: 'essential',
         phase: 'PHASE_1_TODAY',
         description: 'IPS Black panel with 90W USB-C power delivery and built-in RJ45 Ethernet hub'
@@ -263,7 +263,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         name: 'Keychron Q1 Pro Wireless Custom Mechanical Keyboard',
         brand: 'Keychron',
         category: 'Input Devices',
-        weight: 0.26,
+        basePrice: 149.00,
         tier: 'essential',
         phase: 'PHASE_1_TODAY',
         description: 'Full CNC machined aluminum body with QMK/VIA support and tactile switches'
@@ -272,7 +272,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         name: 'Logitech MX Master 3S Wireless Performance Mouse',
         brand: 'Logitech',
         category: 'Ergonomics',
-        weight: 0.16,
+        basePrice: 89.00,
         tier: 'recommended',
         phase: 'PHASE_2_STAGGERED',
         description: '8K DPI optical sensor with MagSpeed electromagnetic scrolling and quiet clicks'
@@ -281,7 +281,7 @@ const REAL_RETAIL_TEMPLATES: CuratedCatalogTemplate[] = [
         name: 'BenQ ScreenBar Halo LED Monitor Light Bar',
         brand: 'BenQ',
         category: 'Task Lighting',
-        weight: 0.14,
+        basePrice: 69.00,
         tier: 'upgrade',
         phase: 'PHASE_2_STAGGERED',
         description: 'Zero-glare asymmetrical optical design with wireless backlight rotary controller'
@@ -301,22 +301,25 @@ export function buildDynamicFallbackProducts(
   chips: Array<{ label: string; prompt: string }>;
 } {
   const cleanGoal = userGoal.trim() || 'Craft Home Espresso & Matcha Bar Setup';
-  const searchTerms = `${cleanGoal} ${tradeOffPrompt || ''}`
+  const searchTerms = (cleanGoal + ' ' + (tradeOffPrompt || ''))
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter(w => w.length >= 2);
-  const fullLower = `${cleanGoal} ${tradeOffPrompt || ''}`.toLowerCase();
+  const tradeLower = (tradeOffPrompt || '').toLowerCase();
 
-  const isOver1500 = fullLower.includes('cinema') || fullLower.includes('4k') || fullLower.includes('studio');
-  let effectiveTotal = isOver1500 ? 1680 : 540;
-
-  if (fullLower.includes('15%') || fullLower.includes('cheaper') || fullLower.includes('reduce')) {
-    effectiveTotal = Math.round(effectiveTotal * 0.85);
-  } else if (fullLower.includes('upgrade') || fullLower.includes('flagship')) {
-    effectiveTotal = Math.round(effectiveTotal * 1.15);
+  let tierMultiplier = 1.0;
+  if (
+    tradeLower.includes('value') ||
+    tradeLower.includes('cheaper') ||
+    tradeLower.includes('15%') ||
+    tradeLower.includes('reduce') ||
+    tradeLower.includes('under')
+  ) {
+    tierMultiplier = 0.85;
+  } else if (tradeLower.includes('pro') || tradeLower.includes('upgrade') || tradeLower.includes('flagship')) {
+    tierMultiplier = 1.15;
   }
 
-  // Score every template by checking keywords AND every item's name, brand, category, and description
   let bestTemplate: CuratedCatalogTemplate | null = null;
   let bestScore = 0;
 
@@ -324,7 +327,7 @@ export function buildDynamicFallbackProducts(
     const searchableText = [
       tpl.bundleName,
       ...tpl.keywords,
-      ...tpl.items.map(i => `${i.name} ${i.brand} ${i.category} ${i.description}`)
+      ...tpl.items.map(i => i.name + ' ' + i.brand + ' ' + i.category + ' ' + i.description)
     ]
       .join(' ')
       .toLowerCase();
@@ -339,18 +342,15 @@ export function buildDynamicFallbackProducts(
     }
   }
 
-  const slug = cleanGoal.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 16) || 'item';
-
-  // If the user typed a custom product/goal not in the 6 templates, build tailored items for their exact search
+  const slug = cleanGoal.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 14) || 'item';
   let selectedItems: CatalogItemTemplate[];
   let resolvedBundleName: string;
 
   if (bestTemplate && bestScore > 0) {
     resolvedBundleName = bestTemplate.bundleName;
-    // If they searched for a specific item inside the template (e.g. "Black Diamond" or "Spur HV"), promote it to Phase 1
     const sorted = [...bestTemplate.items].sort((a, b) => {
-      const aMatch = searchTerms.some(t => `${a.name} ${a.brand}`.toLowerCase().includes(t)) ? 1 : 0;
-      const bMatch = searchTerms.some(t => `${b.name} ${b.brand}`.toLowerCase().includes(t)) ? 1 : 0;
+      const aMatch = searchTerms.some(t => (a.name + ' ' + a.brand).toLowerCase().includes(t)) ? 1 : 0;
+      const bMatch = searchTerms.some(t => (b.name + ' ' + b.brand).toLowerCase().includes(t)) ? 1 : 0;
       return bMatch - aMatch;
     });
     selectedItems = sorted.map((item, idx) => ({
@@ -359,79 +359,83 @@ export function buildDynamicFallbackProducts(
     }));
   } else {
     const titleGoal = cleanGoal.charAt(0).toUpperCase() + cleanGoal.slice(1);
-    resolvedBundleName = `${titleGoal} — Pay in 4 Shopping Plan`;
+    const customBudgetTotal = Math.max(120, Math.min(2000, Math.round(targetTotal * 0.9)));
+    resolvedBundleName = titleGoal + ' - PayPal Pay in 4 Plan';
     selectedItems = [
       {
-        name: `${titleGoal} (Flagship Primary Model)`,
-        brand: 'Verified Retail',
-        category: 'Primary Item',
-        weight: 0.48,
+        name: titleGoal + ' (Primary Essential Model)',
+        brand: 'Demo Catalog',
+        category: 'Primary Essential',
+        basePrice: Math.round(customBudgetTotal * 0.46),
         tier: 'essential',
         phase: 'PHASE_1_TODAY',
-        description: `Top-rated retail model matching "${cleanGoal}" sized for your Pay in 4 budget`
+        description: 'Core essential model for ' + cleanGoal
       },
       {
-        name: `${titleGoal} Companion & Protection Pack`,
-        brand: 'Essentials',
+        name: titleGoal + ' Core Companion Kit',
+        brand: 'Demo Catalog',
         category: 'Core Add-On',
-        weight: 0.27,
+        basePrice: Math.round(customBudgetTotal * 0.28),
         tier: 'essential',
         phase: 'PHASE_1_TODAY',
-        description: `Essential companion gear and extended care kit for ${cleanGoal}`
+        description: 'Required day-one companion kit for ' + cleanGoal
       },
       {
-        name: `${titleGoal} Performance Upgrade Kit`,
-        brand: 'ProLine',
+        name: titleGoal + ' Secondary Upgrade',
+        brand: 'Demo Catalog',
         category: 'Upgrade',
-        weight: 0.15,
+        basePrice: Math.round(customBudgetTotal * 0.16),
         tier: 'recommended',
         phase: 'PHASE_2_STAGGERED',
-        description: `Staggered Phase 2 upgrade scheduled for your next paycheck cycle (+28d)`
+        description: 'Optional upgrade that can wait for your next paycheck (+28d)'
       },
       {
-        name: `${titleGoal} Travel & Storage Organizer`,
-        brand: 'GearCraft',
+        name: titleGoal + ' Care & Organizer Kit',
+        brand: 'Demo Catalog',
         category: 'Accessories',
-        weight: 0.10,
+        basePrice: Math.max(19, Math.round(customBudgetTotal * 0.10)),
         tier: 'upgrade',
         phase: 'PHASE_2_STAGGERED',
-        description: `Protective organizer and everyday maintenance accessories`
+        description: 'Protective storage and everyday maintenance extras'
       }
     ];
   }
 
-  const p1 = Math.round(effectiveTotal * selectedItems[0].weight);
-  const p2 = Math.round(effectiveTotal * selectedItems[1].weight);
-  const p3 = Math.round(effectiveTotal * selectedItems[2].weight);
-  const p4 = Math.max(19, effectiveTotal - (p1 + p2 + p3));
-  const prices = [p1, p2, p3, p4];
+  const products: Product[] = selectedItems.map((item, idx) => {
+    const finalPrice = Number((item.basePrice * tierMultiplier).toFixed(2));
+    const priceCents = Math.round(finalPrice * 100);
+    return {
+      id: 'sku-' + slug + '-' + (idx + 1) + '-' + priceCents,
+      name: item.name,
+      brand: item.brand,
+      category: item.category,
+      price: finalPrice,
+      tier: item.tier,
+      phase: item.phase,
+      description: item.description
+    };
+  });
 
-  const products: Product[] = selectedItems.map((item, idx) => ({
-    id: `sku-${slug}-${idx + 1}`,
-    name: item.name,
-    brand: item.brand,
-    category: item.category,
-    price: prices[idx],
-    tier: item.tier,
-    phase: item.phase,
-    description: item.description
-  }));
-
-  const total = prices.reduce((a, b) => a + b, 0);
+  const total = products.reduce((sum, p) => sum + p.price, 0);
   const biWeekly = (total / 4).toFixed(2);
 
   return {
     bundleName: resolvedBundleName,
-    rationale: `Curated real-world retail items totaling $${total.toFixed(2)} ($${biWeekly} every 2 weeks across 4 payments). Click any card below to customize your bag or split across paychecks.`,
+    rationale:
+      'Prioritized into Day-1 Essentials first and optional Extras second (Est. $' +
+      total.toFixed(2) +
+      ' total, 4 bi-weekly PayPal Pay in 4 installments of $' +
+      biWeekly +
+      ').',
     products,
     chips: [
       {
-        label: `Value Tier (-15% • ~$${Math.round((total * 0.85) / 4)}/2wks)`,
-        prompt: `Swap to value-tier models to reduce total cost by 15%`
+        label: 'Value Tier (-15% ~ $' + Math.round((total * 0.85) / 4) + '/2wks)',
+        prompt: 'Swap to value-tier models to reduce total cost by 15%'
       },
       {
-        label: `Pro Upgrade (+15% • ~$${Math.round((total * 1.15) / 4)}/2wks)`,
-        prompt: `Upgrade primary anchor item to a flagship pro model`
+        label: 'Pro Upgrade (+15% ~ $' + Math.round((total * 1.15) / 4) + '/2wks)',
+        prompt: 'Upgrade primary anchor item to a flagship pro model'
       }
     ]
   };
@@ -483,7 +487,7 @@ async function callGeminiModel(modelName: string, prompt: string) {
   });
 
   const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error(`Gemini timeout on ${modelName}`)), GEMINI_TIMEOUT_MS)
+    setTimeout(() => reject(new Error('Gemini timeout on ' + modelName)), GEMINI_TIMEOUT_MS)
   );
 
   return Promise.race([geminiCall, timeoutPromise]);
@@ -512,39 +516,41 @@ export async function discoverProductsWithGemini(
     };
   }
 
-  const prompt = `You are SplitCart AI, a consumer shopping assistant and PayPal Pay in 4 planner.
-Shopper Search / Goal: "${cleanGoal}"
-Target Bi-Weekly Budget: $${cleanBudget.toFixed(2)} every 2 weeks (Target total cart: ~$${targetTotal.toFixed(2)}).
-Custom Request: "${cleanTradeOff || 'Recommend the best real-world retail items'}".
-
-Instructions:
-1. Recommend 4 specific, real-world retail products with authentic brand names and specific model names that match "${cleanGoal}". If "${cleanGoal}" is a specific product or brand (like "Black Diamond" or "Big Agnes Copper Spur"), make that exact product Item #1 and pair it with 3 matching companion items.
-2. Use realistic MSRP price estimates for each product; do not artificially inflate prices just to fill the budget cap.
-3. Mark the 2 most important items as phase "PHASE_1_TODAY" (Buy Today) and the 2 secondary/accessory items as "PHASE_2_STAGGERED" (Next Paycheck +28d).
-4. Provide a concise shopper rationale and 2 helpful price/model swap chips.`;
+  const prompt = [
+    'You are SplitCart AI, a consumer shopping assistant and PayPal Pay in 4 cash-flow planner.',
+    'Shopper Search / Goal: "' + cleanGoal + '"',
+    '2-Week Paycheck Comfort Cap: $' + cleanBudget.toFixed(2) + ' every 2 weeks (Max 4-payment cap: $' + targetTotal.toFixed(2) + ').',
+    'Custom Request: "' + (cleanTradeOff || 'Recommend essentials first, then extras') + '".',
+    '',
+    'Instructions:',
+    '1. Recommend 4 real-world retail products with authentic brand names and realistic MSRP price estimates matching "' + cleanGoal + '".',
+    '2. Use realistic MSRP estimates; do not artificially inflate prices just to fill the cap. Ensure dependencies make sense (e.g., a crib needs a mattress in Phase 1).',
+    '3. Mark the 2 most essential items as phase "PHASE_1_TODAY" and tier "essential", and the 2 secondary items as "PHASE_2_STAGGERED" and tier "recommended".',
+    '4. Provide a concise shopper rationale and 2 helpful price/model swap chips.'
+  ].join('\n');
 
   try {
-    let response;
-    try {
-      response = await callGeminiModel('gemini-3.8-flash', prompt);
-    } catch {
-      response = await callGeminiModel('gemini-2.5-flash', prompt);
-    }
-
+    const response = await callGeminiModel('gemini-3.8-flash', prompt);
     const parsed = JSON.parse(response.text || '{}');
 
     if (!Array.isArray(parsed.products) || parsed.products.length < 2) {
       throw new Error('Gemini returned fewer than 2 products');
     }
 
-    const rawProducts: Product[] = parsed.products.slice(0, 6).map((p: any, idx: number) => ({
-      ...p,
-      id: `${String(p.id || 'sku').replace(/[^a-zA-Z0-9_-]/g, '')}-${idx + 1}`
-    }));
+    const rawProducts: Product[] = parsed.products.slice(0, 4).map((p: any, idx: number) => {
+      const cleanPrice = Number(Math.max(10, Number(p.price) || 49).toFixed(2));
+      const priceCents = Math.round(cleanPrice * 100);
+      const baseId = String(p.id || 'sku').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 28);
+      return {
+        ...p,
+        id: baseId + '-' + (idx + 1) + '-' + priceCents,
+        price: cleanPrice
+      };
+    });
 
     return {
-      bundleName: parsed.bundleName || `Curated ${cleanGoal}`,
-      rationale: parsed.rationale || `Curated for your $${cleanBudget}/2wks PayPal Pay in 4 budget.`,
+      bundleName: parsed.bundleName || ('Curated ' + cleanGoal),
+      rationale: parsed.rationale || ('Prioritized for your $' + cleanBudget + '/2wks PayPal Pay in 4 cap.'),
       rawProducts,
       negotiationChips: Array.isArray(parsed.negotiationChips) ? parsed.negotiationChips.slice(0, 3) : [],
       sourceMode: 'gemini-live'
