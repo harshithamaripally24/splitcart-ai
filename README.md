@@ -1,4 +1,4 @@
-# SplitCart AI - Bi-Weekly Cash-Flow & PayPal Pay in 4 Timing Planner
+# SplitCart AI - Cash-Flow-Aware Shopping Planner
 
 > **Plan what to buy and when, so you can spot potential bill-date conflicts before checkout.**
 > SplitCart AI is a consumer-facing pre-checkout cash-flow planner that turns a shopping goal into an Essentials-first checklist, projects estimated 4-payment installment dates (+0d, +14d, +28d, +42d) against your monthly bill day, suggests a purchase date that clears your bill buffer (with a 1-click `.ics` calendar reminder), and checks out via PayPal Sandbox.
