@@ -31,7 +31,7 @@ graph TD
 ## Current Prototype Scope & Limitations
 - **Who This Is For:** Built as a consumer pre-checkout cash-flow planner, architected to evolve into an embeddable merchant checkout widget.
 - **Role of Gemini vs. Deterministic Code:** Gemini translates plain-language goals into a prioritized checklist of Essentials first and Extras second; deterministic TypeScript code performs all cent-exact installment math, bill-day buffer checks, and HMAC-SHA256 signing.
-- **Estimated Timeline & Manual Phased Checkouts:** The 4-payment timeline is an estimate for planning purposes and does not schedule bank deductions or guarantee overdraft prevention. Selecting "Essentials First" or "Extras Only" lets the shopper check out those items today as a single order; the app does not automatically schedule or auto-charge future Phase 2 purchases.
+**Estimated bill-date check:** SplitCart shows how a hypothetical four-payment plan spaced 14 days apart could overlap with bills. It’s a budgeting estimate, not a payment schedule; actual options and terms depend on the checkout provider.
 - **Illustrative Demo Pricing:** Product prices are illustrative demo estimates (`Est. $XX.XX`), not live store feeds.
 - **PayPal Sandbox & Testing Access:** Checkout runs in the US PayPal Sandbox (`USD`, Pay in 4 eligible from `$30.00` to `$1,500.00`). Judges may log in at checkout using their own PayPal Developer Sandbox personal buyer account, or request dedicated test buyer credentials via the hackathon organizers / private submission notes.
 
