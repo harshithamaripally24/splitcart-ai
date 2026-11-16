@@ -15,7 +15,8 @@ import {
   Check,
   Trash2,
   Clock,
-  Lock
+  Lock,
+  Bell
 } from 'lucide-react';
 import { Navbar } from './components/layout/Navbar';
 import type { PlanData, Product } from './types/bundle.types';
@@ -47,6 +48,13 @@ function computeLocalInstallments(totalCents: number): [number, number, number, 
   ];
 }
 
+function formatInstallmentSummary(installments: [number, number, number, number]): string {
+  if (installments[0] === installments[1]) {
+    return '4x $' + installments[0].toFixed(2) + ' / 2 wks';
+  }
+  return 'First payment $' + installments[0].toFixed(2) + ', then 3 of $' + installments[1].toFixed(2);
+}
+
 function getMinDaysToBillDate(dateObj: Date, billDay: number): number {
   const year = dateObj.getFullYear();
   const month = dateObj.getMonth();
@@ -70,7 +78,9 @@ function isDateSafeFromBillDay(dateObj: Date, billDay: number): boolean {
 function computeBestDayToBuy(billDay: number): {
   buyTodaySafe: boolean;
   recommendedDateLabel: string;
+  recommendedDateObj: Date;
   daysToWait: number;
+  shiftedDatesList: string[];
 } {
   const offsets = [0, 14, 28, 42];
   const today = new Date();
@@ -90,10 +100,17 @@ function computeBestDayToBuy(billDay: number): {
         month: 'short',
         day: 'numeric'
       });
+      const shiftedDatesList = offsets.map(off => {
+        const d = new Date(candidateStart);
+        d.setDate(candidateStart.getDate() + off);
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      });
       return {
         buyTodaySafe: wait === 0,
         recommendedDateLabel: wait === 0 ? ('Today (' + formatted + ')') : formatted,
-        daysToWait: wait
+        recommendedDateObj: candidateStart,
+        daysToWait: wait,
+        shiftedDatesList
       };
     }
   }
@@ -101,8 +118,59 @@ function computeBestDayToBuy(billDay: number): {
   return {
     buyTodaySafe: true,
     recommendedDateLabel: 'Today',
-    daysToWait: 0
+    recommendedDateObj: today,
+    daysToWait: 0,
+    shiftedDatesList: []
   };
+}
+
+function downloadPurchaseReminderIcs(
+  buyDate: Date,
+  dateLabel: string,
+  bundleName: string,
+  totalPrice: number,
+  installments: [number, number, number, number],
+  billDayOrdinal: string,
+  shiftedDates: string[]
+) {
+  const yyyy = buyDate.getFullYear();
+  const mm = String(buyDate.getMonth() + 1).padStart(2, '0');
+  const dd = String(buyDate.getDate()).padStart(2, '0');
+  const dateStamp = yyyy + mm + dd;
+
+  const splitDesc = formatInstallmentSummary(installments);
+  const summary = 'SplitCart AI: Buy ' + bundleName + ' ($' + totalPrice.toFixed(2) + ')';
+  const description =
+    'Recommended purchase day so all 4 bi-weekly payments (' +
+    shiftedDates.join(', ') +
+    ') clear your ' +
+    billDayOrdinal +
+    ' bill date. Payment plan: ' +
+    splitDesc;
+
+  const icsLines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//SplitCart AI//Cash-Flow Planner//EN',
+    'BEGIN:VEVENT',
+    'UID:splitcart-' + dateStamp + '-' + Math.round(totalPrice * 100) + '@splitcart.ai',
+    'DTSTAMP:' + dateStamp + 'T090000Z',
+    'DTSTART;VALUE=DATE:' + dateStamp,
+    'SUMMARY:' + summary,
+    'DESCRIPTION:' + description,
+    'END:VEVENT',
+    'END:VCALENDAR'
+  ].join('\r\n');
+
+  const blob = new Blob([icsLines], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'splitcart-buy-reminder-' + dateLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.ics';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function formatOrdinal(n: number): string {
@@ -410,7 +478,7 @@ export default function App() {
                 <Sparkles className="w-3 h-3" /> Smart Bi-Weekly Cash-Flow Planner
               </span>
               <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight">
-                Plan What to Buy and When, So Payments Never Collide With Your Bills
+                Plan What to Buy and When to Spot Potential Bill-Date Conflicts
               </h1>
             </div>
             <div className="hidden md:flex items-center gap-2 text-xs text-slate-300 bg-white/5 px-3.5 py-2 rounded-xl border border-white/10">
@@ -558,7 +626,7 @@ export default function App() {
                     {activeCheckout.items.length > 0 ? (
                       <>
                         <p className="text-xs font-bold text-emerald-600">
-                          4x ${activeCheckout.biWeekly.toFixed(2)} / 2 wks
+                          {formatInstallmentSummary(activeCheckout.installments)}
                         </p>
                         <p
                           className={
@@ -655,7 +723,8 @@ export default function App() {
                   {(plan?.items || []).map(item => {
                     const isPhase1 = item.phase === 'PHASE_1_TODAY';
                     const isIncludedInActiveCart = activeSkuSet.has(item.id);
-                    const itemBiWeekly = (item.price / 4).toFixed(2);
+                    const itemInst = computeLocalInstallments(Math.round(item.price * 100));
+                    const itemBiWeekly = itemInst[0].toFixed(2);
 
                     let statusBadgeText = 'Not Selected';
                     let statusBadgeClass = 'bg-slate-200 text-slate-600';
@@ -797,10 +866,10 @@ export default function App() {
                   <div>
                     <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
                       <TrendingDown className="w-5 h-5 text-blue-600" />
-                      Your 4-Payment Timeline ({activeCheckout.label})
+                      Estimated 4-Payment Timeline ({activeCheckout.label})
                     </h3>
                     <p className="text-xs text-slate-500">
-                      Checked against your {formatOrdinal(rentDueDay)} of the month bill / rent due date.
+                      Estimated 14-day intervals checked against your {formatOrdinal(rentDueDay)} bill date to flag potential conflicts (actual schedule set by PayPal at checkout).
                     </p>
                   </div>
 
@@ -817,34 +886,64 @@ export default function App() {
 
                 <div
                   className={
-                    'p-3.5 rounded-xl border flex items-start gap-2.5 text-xs ' +
+                    'p-3.5 rounded-xl border flex flex-wrap items-center justify-between gap-3 text-xs ' +
                     (bestBuyTiming.buyTodaySafe
                       ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
                       : 'bg-amber-50 border-amber-300 text-amber-950')
                   }
                 >
-                  <Clock
-                    className={
-                      'w-4 h-4 shrink-0 mt-0.5 ' +
-                      (bestBuyTiming.buyTodaySafe ? 'text-emerald-600' : 'text-amber-700')
-                    }
-                  />
-                  <div>
-                    {bestBuyTiming.buyTodaySafe ? (
-                      <p className="font-bold">
-                        Best day to buy: <span className="underline">{bestBuyTiming.recommendedDateLabel}</span>{' '}
-                        {'\u2014'} none of the 4 payments (Day 0, +14d, +28d, +42d) land within 2 days of the{' '}
-                        {formatOrdinal(rentDueDay)}.
-                      </p>
-                    ) : (
-                      <p className="font-bold">
-                        Best day to buy: Buy on{' '}
-                        <span className="underline">{bestBuyTiming.recommendedDateLabel}</span> or later (wait{' '}
-                        {bestBuyTiming.daysToWait} {bestBuyTiming.daysToWait === 1 ? 'day' : 'days'}) and all 4
-                        payments will clear your {formatOrdinal(rentDueDay)} bill day.
-                      </p>
-                    )}
+                  <div className="flex items-start gap-2.5">
+                    <Clock
+                      className={
+                        'w-4 h-4 shrink-0 mt-0.5 ' +
+                        (bestBuyTiming.buyTodaySafe ? 'text-emerald-600' : 'text-amber-700')
+                      }
+                    />
+                    <div className="space-y-1">
+                      {bestBuyTiming.buyTodaySafe ? (
+                        <p className="font-bold">
+                          Best day to buy: <span className="underline">{bestBuyTiming.recommendedDateLabel}</span>{' '}
+                          {'\u2014'} none of the 4 payments (Day 0, +14d, +28d, +42d) land within 2 days of the{' '}
+                          {formatOrdinal(rentDueDay)}.
+                        </p>
+                      ) : (
+                        <>
+                          <p className="font-bold">
+                            Best day to buy: Buy on{' '}
+                            <span className="underline">{bestBuyTiming.recommendedDateLabel}</span> or later (wait{' '}
+                            {bestBuyTiming.daysToWait} {bestBuyTiming.daysToWait === 1 ? 'day' : 'days'}) and all 4
+                            payments will clear your {formatOrdinal(rentDueDay)} bill day.
+                          </p>
+                          <p className="text-amber-900 font-semibold">
+                            If you buy {bestBuyTiming.recommendedDateLabel}:{' '}
+                            <span className="font-extrabold">{bestBuyTiming.shiftedDatesList.join(', ')}</span>. All
+                            clear.
+                          </p>
+                        </>
+                      )}
+                    </div>
                   </div>
+
+                  {!bestBuyTiming.buyTodaySafe && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        downloadPurchaseReminderIcs(
+                          bestBuyTiming.recommendedDateObj,
+                          bestBuyTiming.recommendedDateLabel,
+                          plan.bundleName,
+                          activeCheckout.totalPrice,
+                          activeCheckout.installments,
+                          formatOrdinal(rentDueDay),
+                          bestBuyTiming.shiftedDatesList
+                        )
+                      }
+                      className="bg-amber-900 hover:bg-amber-800 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition shrink-0 cursor-pointer shadow-2xs"
+                    >
+                      <Bell className="w-3.5 h-3.5" />
+                      Remind me on {bestBuyTiming.recommendedDateLabel} (.ics)
+                    </button>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -870,7 +969,8 @@ export default function App() {
                           </span>
                         ) : (
                           <span className="text-[10px] text-amber-900 font-extrabold mt-1.5 block">
-                            {'\u26a0'} Near {formatOrdinal(rentDueDay)} bill {'\u2022'} Buy{' '}
+                            {'\u26a0'} Near {formatOrdinal(rentDueDay)} bill {'\u2022'} Moves to{' '}
+                            {bestBuyTiming.shiftedDatesList[idx] || bestBuyTiming.recommendedDateLabel} if bought{' '}
                             {bestBuyTiming.recommendedDateLabel}
                           </span>
                         )}
@@ -896,7 +996,7 @@ export default function App() {
                   <span className="text-xl font-black text-slate-900">${activeCheckout.totalPrice.toFixed(2)}</span>
                   {activeCheckout.items.length > 0 && (
                     <span className="block text-[11px] font-extrabold text-emerald-600">
-                      4x ${activeCheckout.biWeekly.toFixed(2)} / 2 wks
+                      {formatInstallmentSummary(activeCheckout.installments)}
                     </span>
                   )}
                 </div>
