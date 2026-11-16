@@ -1,51 +1,46 @@
-# SplitCart AI — Universal E-Commerce Product Discovery & Paycheck-Aligned Cash-Flow Planner
+# SplitCart AI - Bi-Weekly Cash-Flow & PayPal Pay in 4 Timing Planner
 
-> **PayPal AI Hackathon 2026 Submission**  
-> SplitCart AI solves cash-flow fragmentation, BNPL loan stacking, and rent-date overdraft collisions for 0% APR PayPal Pay in 4.
+> **Plan what to buy and when, so you can spot potential bill-date conflicts before checkout.**
+> SplitCart AI is a consumer-facing pre-checkout cash-flow planner that turns a shopping goal into an Essentials-first checklist, projects estimated 4-payment installment dates (+0d, +14d, +28d, +42d) against your monthly bill day, suggests a purchase date that clears your bill buffer (with a 1-click `.ics` calendar reminder), and checks out via PayPal Sandbox.
 
-## 🚀 The Problem ("Why Now?")
-* **The Living Expense Collision:** When installment pulls land near rent day or other fixed bills, the timing can create cash-flow stress for households already operating on thin margins.
-* **The Paycheck Reality:** In Debt.com's 2026 budgeting survey, **48% of Americans say they are living paycheck to paycheck**, and **84.67% say they budget**. Most standard e-commerce carts still optimize only for total price, which can hide the timing risk of multiple installment pulls landing on heavy bill days.
-* **The Solution:** SplitCart AI acts as an intelligent pre-cart planner that maps any shopping goal against a shopper's bi-weekly payroll and bill calendar, automatically staggering purchases into safe, non-colliding paycheck phases.
+## The Problem ("Why Now?")
+- **The Paycheck & Budgeting Reality:** According to [Debt.com's 2026 Budgeting Survey](https://www.debt.com/research/best-way-to-budget/), **84.67% of survey respondents reported that they budget** and **48% of respondents reported living paycheck to paycheck**, yet standard e-commerce carts only display total cart price - leaving shoppers to calculate on their own whether four bi-weekly installment dates will land near major recurring bills like rent.
+- **The Solution:** SplitCart AI acts as a pre-checkout planning tool that maps a shopping list against your 2-week comfort cap and selected bill date, flagging potential 2-day buffer conflicts, showing the shifted payment dates if you wait for the recommended purchase day, and allowing shoppers to check out Day-1 Essentials separately from optional Extras.
 
-#### Sources
-* Debt.com 2026 Budgeting Survey: https://www.debt.com/research/best-way-to-budget/
-
-## 🏗️ Visual Architecture & Data Flow
+## Visual Architecture & Data Flow
 
 ```mermaid
 graph TD
-    A["Shopper Goal & 2-Wk Budget"] -->|"POST /api/agent/plan"| B["Backend Cash-Flow Controller"]
-    B -->|"Gemini 3.8-Flash API"| C{"AI Discovery"}
-    C -->|"Live Success"| D["Real Retail Products & Prices"]
-    C -->|"Timeout or Error"| E["Deterministic Fallback Generator"]
-    D --> F["Quote Registry & HMAC Signer"]
+    A["Shopper Goal, 2-Wk Cap & Bill Day"] -->|"POST /api/agent/plan"| B["Backend Cash-Flow Controller"]
+    B -->|"Gemini 3.8-Flash JSON Schema"| C{"AI Discovery"}
+    C -->|"Live Success"| D["Prioritized Essentials & Extras"]
+    C -->|"Timeout or Fallback"| E["Deterministic Catalog Generator"]
+    D --> F["Bounded Quote Registry & HMAC Signer"]
     E --> F
-    F -->|"HMAC-SHA256 Signature"| G["Client UI: Cards & Pay Schedule"]
+    F -->|"HMAC-SHA256 Signed Quote"| G["Client UI: Estimated Timeline, .ICS Reminder & Bag"]
     G -->|"Create Order + HMAC"| H["PayPal Orders v2 REST API"]
-    H -->|"0% APR Pay in 4"| I["Verified Payment Capture & Audit"]
+    H -->|"Pay Later / PayPal Sandbox"| I["Capture Status Verification (COMPLETED / PENDING / APPROVED)"]
 ```
 
-## 🔒 Security & Guardrail Contracts
-* **Server-Side HMAC-SHA256 Cart Signing:** Prevents client-side price tampering by cryptographically binding SKU IDs and integer cent totals.
-* **Cent-Exact Floating Math Elimination:** All calculations are executed in integer cents (`Math.round(price * 100)`) to eliminate float drift across 4 equal installments.
-* **Bill-Day Buffer Validation:** Scans the 4-payment timeline against your selected bill/rent date (e.g., the 1st of the month) and flags potential liquidity collisions.
+## Security & Financial Guardrails
+- **Server-Side Cart HMAC-SHA256 Signing:** Prevents client-side price tampering by cryptographically binding SKU IDs and integer-cent totals using `crypto.timingSafeEqual`.
+- **Cent-Exact Integer Arithmetic:** All installment calculations are executed in integer cents (`Math.round(price * 100)`) so the 4 payments (`first payment $X, then 3 of $Y`) always sum to 100% of the order total without floating-point drift.
+- **Estimated Calendar Month-Boundary Conflict Check:** Projects the 4 installment dates (`Day 0, +14d, +28d, +42d`) across real calendar month lengths (28/29/30/31 days) to flag potential conflicts within 2 days of the selected bill due date and display the exact shifted payment dates from the recommended purchase day.
+- **PayPal Orders v2 Capture Verification:** Validates Order IDs (`10-36` alphanumeric characters) and verifies that PayPal returns a valid capture status (`COMPLETED`, `PENDING`, or `APPROVED`).
 
-## 🛠️ Testing & Execution
+## Current Prototype Scope & Limitations
+- **Who This Is For:** Built as a consumer pre-checkout cash-flow planner, architected to evolve into an embeddable merchant checkout widget.
+- **Role of Gemini vs. Deterministic Code:** Gemini translates plain-language goals into a prioritized checklist of Essentials first and Extras second; deterministic TypeScript code performs all cent-exact installment math, bill-day buffer checks, and HMAC-SHA256 signing.
+- **Estimated Timeline & Manual Phased Checkouts:** The 4-payment timeline is an estimate for planning purposes and does not schedule bank deductions or guarantee overdraft prevention. Selecting "Essentials First" or "Extras Only" lets the shopper check out those items today as a single order; the app does not automatically schedule or auto-charge future Phase 2 purchases.
+- **Illustrative Demo Pricing:** Product prices are illustrative demo estimates (`Est. $XX.XX`), not live store feeds.
+- **PayPal Sandbox & Testing Access:** Checkout runs in the US PayPal Sandbox (`USD`, Pay in 4 eligible from `$30.00` to `$1,500.00`). Judges may log in at checkout using their own PayPal Developer Sandbox personal buyer account, or request dedicated test buyer credentials via the hackathon organizers / private submission notes.
 
-To run the backend unit and integration test suite from your local terminal:
+## Testing & Execution
 
 ```bash
 cd server
 npm run build
-node --test "dist/**/*.spec.js"
+npm test
 ```
 
-
-*Disclaimer: This is a personal project. The views, code and opinions expressed here are my own and do not represent those of my current or past employers.*
-
-## Current Prototype Scope & Limitations
-- **Who This Is For:** Built as a consumer pre-checkout cash-flow planner ("Plan what to buy and when, so the payments never collide with your bills"), architected to evolve into an embeddable merchant checkout widget.
-- **Role of Gemini vs. Deterministic Code:** Gemini translates plain-language goals into a prioritized checklist of Essentials first and Extras second; deterministic TypeScript code performs all cent-exact installment math, bill-day collision checks, and HMAC-SHA256 signing so the AI never touches payment math.
-- **Illustrative Demo Pricing:** Product prices are illustrative demo estimates (`Est. $XX.XX`), not live store feeds. Because a PayPal order goes to one merchant, production deployment pairs one checkout order per store.
-- **PayPal Sandbox Only:** Checkout runs in the US PayPal Sandbox (`USD`, Pay in 4 eligible from `$30.00` to `$1,500.00`).
+*Disclaimer: This is a personal project. The views, code, and opinions expressed here are my own and do not represent those of my current or past employers.*
