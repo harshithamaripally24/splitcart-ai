@@ -128,7 +128,9 @@ export async function buildCashFlowBundlePlan(
       installments: fullInstallments,
       schedule: buildFourInstallmentSchedule(fullInstallments, cleanRentDay),
       statusMessage: payIn4Eligible
-        ? 'Eligible for 4 bi-weekly PayPal Pay in 4 payments of $' + biWeeklyAmount.toFixed(2) + ' (0% APR)'
+        ? (fullInstallments[0] === fullInstallments[1]
+            ? 'Eligible for 4 bi-weekly PayPal Pay in 4 payments of $' + fullInstallments[0].toFixed(2) + ' (0% APR)'
+            : 'Eligible for PayPal Pay in 4: first payment $' + fullInstallments[0].toFixed(2) + ', then 3 of $' + fullInstallments[1].toFixed(2) + ' (0% APR)')
         : 'Full cart ($' + totalPrice.toFixed(2) + ') exceeds the $1,500 single-order Pay in 4 cap.'
     },
     payMonthly: {

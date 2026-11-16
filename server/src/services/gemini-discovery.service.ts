@@ -416,16 +416,24 @@ export function buildDynamicFallbackProducts(
     };
   });
 
-  const total = products.reduce((sum, p) => sum + p.price, 0);
-  const biWeekly = (total / 4).toFixed(2);
+  const totalCents = products.reduce((sum, p) => sum + Math.round(p.price * 100), 0);
+  const total = Number((totalCents / 100).toFixed(2));
+  const baseCents = Math.floor(totalCents / 4);
+  const remCents = totalCents - baseCents * 4;
+  const firstPay = ((baseCents + remCents) / 100).toFixed(2);
+  const restPay = (baseCents / 100).toFixed(2);
+  const installmentPhrase =
+    remCents === 0
+      ? '4 bi-weekly installments of $' + firstPay
+      : 'first payment $' + firstPay + ', then 3 of $' + restPay;
 
   return {
     bundleName: resolvedBundleName,
     rationale:
       'Prioritized into Day-1 Essentials first and optional Extras second (Est. $' +
       total.toFixed(2) +
-      ' total, 4 bi-weekly PayPal Pay in 4 installments of $' +
-      biWeekly +
+      ' total \u2014 ' +
+      installmentPhrase +
       ').',
     products,
     chips: [
@@ -526,7 +534,7 @@ export async function discoverProductsWithGemini(
     '1. Recommend 4 real-world retail products with authentic brand names and realistic MSRP price estimates matching "' + cleanGoal + '".',
     '2. Use realistic MSRP estimates; do not artificially inflate prices just to fill the cap. Ensure dependencies make sense (e.g., a crib needs a mattress in Phase 1).',
     '3. Mark the 2 most essential items as phase "PHASE_1_TODAY" and tier "essential", and the 2 secondary items as "PHASE_2_STAGGERED" and tier "recommended".',
-    '4. Provide a concise shopper rationale and 2 helpful price/model swap chips.'
+    '4. Provide a concise 1-sentence shopper rationale explaining why the Phase 1 items are prioritized first (do not calculate or mention dollar installment amounts in the rationale text; the server appends exact cent splits) and 2 helpful price/model swap chips.'
   ].join('\n');
 
   try {
@@ -548,9 +556,23 @@ export async function discoverProductsWithGemini(
       };
     });
 
+    const liveTotalCents = rawProducts.reduce((sum, p) => sum + Math.round(p.price * 100), 0);
+    const liveTotal = Number((liveTotalCents / 100).toFixed(2));
+    const liveBaseCents = Math.floor(liveTotalCents / 4);
+    const liveRemCents = liveTotalCents - liveBaseCents * 4;
+    const liveFirstPay = ((liveBaseCents + liveRemCents) / 100).toFixed(2);
+    const liveRestPay = (liveBaseCents / 100).toFixed(2);
+    const liveSplitText =
+      liveRemCents === 0
+        ? '4 bi-weekly installments of $' + liveFirstPay
+        : 'first payment $' + liveFirstPay + ', then 3 of $' + liveRestPay;
+    const cleanAiRationale = String(parsed.rationale || 'Prioritized into Day-1 Essentials first and optional Extras second.')
+      .replace(/\s*\(Est\..*?\)\.?$/i, '')
+      .trim();
+
     return {
       bundleName: parsed.bundleName || ('Curated ' + cleanGoal),
-      rationale: parsed.rationale || ('Prioritized for your $' + cleanBudget + '/2wks PayPal Pay in 4 cap.'),
+      rationale: cleanAiRationale + ' (Est. $' + liveTotal.toFixed(2) + ' total \u2014 ' + liveSplitText + ').',
       rawProducts,
       negotiationChips: Array.isArray(parsed.negotiationChips) ? parsed.negotiationChips.slice(0, 3) : [],
       sourceMode: 'gemini-live'

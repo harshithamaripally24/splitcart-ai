@@ -259,6 +259,14 @@ export default function App() {
     setBudget(cleanCap);
     setBudgetInput(String(cleanCap));
 
+    if (!paypalClientId) {
+      fetchClientConfig()
+        .then(cfg => {
+          if (cfg?.paypalClientId) setPaypalClientId(cfg.paypalClientId);
+        })
+        .catch(() => {});
+    }
+
     try {
       const data = await requestBundlePlan({
         userGoal: selectedGoal,
@@ -441,15 +449,7 @@ export default function App() {
     setCheckoutComplete(capture);
   };
 
-  const checkRentCollision = (isoOrDateStr: string) => {
-    const parsed = new Date(isoOrDateStr);
-    if (isNaN(parsed.getTime())) return { safe: true, minDiff: 10 };
-    const minDiff = getMinDaysToBillDate(parsed, rentDueDay);
-    return {
-      safe: minDiff > 2,
-      minDiff
-    };
-  };
+
 
   const activeCheckout = getActiveCheckoutPayload();
   const activeSkuSet = new Set(activeCheckout.skuIds);
@@ -947,22 +947,30 @@ export default function App() {
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {plan.payIn4.schedule.map((slot, idx) => {
-                    const collision = checkRentCollision(slot.isoDate || slot.date);
+                  {[0, 14, 28, 42].map((offsetDays, idx) => {
+                    const localPullDate = new Date();
+                    localPullDate.setDate(localPullDate.getDate() + offsetDays);
+                    const localDateLabel = localPullDate.toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric'
+                    });
+                    const slotLabel = idx === 0 ? 'Payment 1 (Today)' : ('Payment ' + (idx + 1) + ' (+' + offsetDays + 'd)');
+                    const collision = { safe: isDateSafeFromBillDay(localPullDate, rentDueDay) };
                     const displayAmount = activeCheckout.installments[idx] ?? 0;
                     return (
                       <div
-                        key={slot.installment}
+                        key={idx + 1}
                         className={
                           'p-3.5 rounded-xl border-2 ' +
                           (collision.safe ? 'bg-slate-50 border-slate-200' : 'bg-amber-50 border-amber-400')
                         }
                       >
-                        <span className="text-[11px] font-bold text-slate-500 block">{slot.label}</span>
+                        <span className="text-[11px] font-bold text-slate-500 block">{slotLabel}</span>
                         <span className="text-xl font-black text-slate-900 mt-1 block">
                           ${displayAmount.toFixed(2)}
                         </span>
-                        <span className="text-xs font-semibold text-slate-600 block">{slot.date}</span>
+                        <span className="text-xs font-semibold text-slate-600 block">{localDateLabel}</span>
                         {collision.safe ? (
                           <span className="text-[10px] text-emerald-700 font-bold mt-1.5 block">
                             {'\u2713'} Clears bill day ({formatOrdinal(rentDueDay)})
